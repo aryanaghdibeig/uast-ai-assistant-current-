@@ -29,16 +29,16 @@ export default function ChatPage() {
 
     const userMessage: Message = {
       role: "user",
-      content: input || "📎 File uploaded",
+      content: input || "📎 [File Uploaded]",
     };
 
+    // ایجاد یک پیام خالی برای استریم کردن پاسخ
     const assistantMessage: Message = {
       role: "assistant",
       content: "",
     };
 
     const newMessages = [...messages, userMessage, assistantMessage];
-
     setMessages(newMessages);
     setInput("");
     setLoading(true);
@@ -47,7 +47,7 @@ export default function ChatPage() {
     formData.append("message", input);
     formData.append("history", JSON.stringify([...messages, userMessage]));
     files.forEach((f) => formData.append("files", f));
-    setFiles([]);
+    setFiles([]); // پاک کردن لیست فایل‌ها پس از ارسال
 
     try {
       const res = await fetch("/api/chat", {
@@ -55,35 +55,54 @@ export default function ChatPage() {
         body: formData,
       });
 
-      const reader = res.body?.getReader();
+      if (!res.body) throw new Error("No response body");
+
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
-
-      if (!reader) throw new Error("No stream");
-
       let fullText = "";
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        fullText += chunk;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
 
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            role: "assistant",
-            content: fullText,
-          };
-          return updated;
-        });
+        for (const line of lines) {
+          // فیلتر کردن خطوط خالی و خطوطی که حاوی داده نیستند
+          if (line.startsWith("data: ")) {
+            const data = line.replace("data: ", "");
+            
+            if (data.includes("[DONE]")) continue;
+
+            try {
+              const json = JSON.parse(data);
+              const content = json.choices[0]?.delta?.content || "";
+              
+              if (content) {
+                fullText += content;
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = {
+                    role: "assistant",
+                    content: fullText,
+                  };
+                  return updated;
+                });
+              }
+            } catch (e) {
+              console.error("Error parsing JSON chunk:", e);
+            }
+          }
+        }
       }
-    } catch {
+    } catch (err) {
+      console.error("Chat error:", err);
       setMessages((prev) => [
         ...prev.slice(0, -1),
         {
           role: "assistant",
-          content: "❌ خطا در دریافت پاسخ",
+          content: "❌ خطا در دریافت پاسخ. لطفاً دوباره تلاش کنید.",
         },
       ]);
     } finally {
@@ -104,16 +123,12 @@ export default function ChatPage() {
           <div
             key={i}
             className={`${styles.messageRow} ${
-              msg.role === "user"
-                ? styles.userRow
-                : styles.aiRow
+              msg.role === "user" ? styles.userRow : styles.aiRow
             }`}
           >
             <div
               className={`${styles.bubble} ${
-                msg.role === "user"
-                  ? styles.userBubble
-                  : styles.aiBubble
+                msg.role === "user" ? styles.userBubble : styles.aiBubble
               }`}
             >
               {msg.content}
@@ -137,9 +152,7 @@ export default function ChatPage() {
           hidden
           multiple
           onChange={(e) =>
-            setFiles(
-              e.target.files ? Array.from(e.target.files) : []
-            )
+            setFiles(e.target.files ? Array.from(e.target.files) : [])
           }
         />
 
@@ -156,7 +169,7 @@ export default function ChatPage() {
           onClick={sendMessage}
           disabled={loading}
         >
-          ارسال
+          {loading ? "..." : "ارسال"}
         </button>
       </div>
 

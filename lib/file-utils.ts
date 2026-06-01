@@ -1,23 +1,24 @@
 export async function buildFilesContext(files: File[]) {
-  if (!files || files.length === 0) return { textContext: "", images: [] };
-
   let textContext = "";
-  const images: { name: string; base64: string }[] = [];
+  const images: any[] = [];
 
   for (const file of files) {
     if (file.type.startsWith("image/")) {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const base64 = buffer.toString("base64");
-
+      // تبدیل تصویر به Base64
+      const buffer = await file.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString("base64");
+      
+      // افزودن به آرایه تصاویر با ساختار استاندارد
       images.push({
-        name: file.name,
-        base64: `data:${file.type};base64,${base64}`,
+        type: "image_url",
+        image_url: {
+          url: `data:${file.type};base64,${base64}`,
+        },
       });
-    } else if (file.type.startsWith("text/")) {
-      const text = await file.text();
-      textContext += `\n--- File: ${file.name} ---\n${text.slice(0, 4000)}\n`;
     } else {
-      textContext += `\n--- File: ${file.name} ---\n[Unsupported non-image file]\n`;
+      // اگر فایل متنی است، محتوای آن را بخوان
+      const text = await file.text();
+      textContext += `\n[File: ${file.name}]\n${text.substring(0, 4000)}\n`;
     }
   }
 
