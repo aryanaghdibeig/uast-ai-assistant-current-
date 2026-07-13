@@ -1,17 +1,9 @@
 import Image from "next/image";
-import styles from "../Chat.module.css";
+import styles from "./Header.module.css";
 
 export default function Header() {
   return (
-    <div className={styles.header}>
-      <Image
-        src="/logo.png"
-        alt="University Logo"
-        width={48}
-        height={48}
-        className={styles.logo}
-      />
-
+    <header className={styles.header}>
       <div className={styles.headerText}>
         <div className={styles.title}>
           دستیار هوشمند دانشگاه جامع علمی کاربردی
@@ -21,6 +13,15 @@ export default function Header() {
           تولید شده توسط مرکز هوش مصنوعی و تولید محتوای الکترونیکی
         </div>
       </div>
-    </div>
+
+      <Image
+        src="/logo.png"
+        alt="University Logo"
+        width={48}
+        height={48}
+        className={styles.logo}
+        priority
+      />
+    </header>
   );
 }
