@@ -33,6 +33,11 @@ import WelcomePanel from "@/components/chat/WelcomePanel";
 import SmartFollowUpActions from "@/components/chat/SmartFollowUpActions";
 
 /**
+ * نمایش وضعیت اعتبار کاربر
+ */
+import UserCreditsBadge from "@/components/chat/UserCreditsBadge";
+
+/**
  * انتخاب‌گر مدل OpenRouter
  */
 import ModelSelector from "@/components/chat/ModelSelector";
@@ -59,34 +64,64 @@ import type {
 ===================================================== */
 
 type Message = {
+  id?:
+  string;
+
   role:
-    | "user"
-    | "assistant";
+  | "user"
+  | "assistant";
 
   content:
-    string;
+  string;
+
+  createdAt?:
+  string;
 };
 
 
 type Conversation = {
   id:
-    string;
+  string;
 
   title:
-    string;
+  string;
 
   assistantMode:
-    AssistantModeId;
+  AssistantModeId;
 
   messages:
-    Message[];
+  Message[];
+};
+
+
+type ConversationBranch = {
+  id:
+  string;
+
+  conversationId:
+  string;
+
+  title:
+  string;
+
+  branchOrder:
+  number;
+
+  isActive:
+  boolean;
+
+  createdAt:
+  string;
+
+  updatedAt:
+  string;
 };
 
 
 type ChatPageClientProps = {
   userEmail?:
-    | string
-    | null;
+  | string
+  | null;
 };
 
 
@@ -96,7 +131,7 @@ type ExecuteMessageOptions = {
    * برای مدل ارسال می‌شود.
    */
   apiMessageText:
-    string;
+  string;
 
 
   /**
@@ -104,15 +139,32 @@ type ExecuteMessageOptions = {
    * مشاهده می‌کند.
    */
   displayMessageText?:
-    string;
+  string;
 
 
   attachedFiles?:
-    File[];
+  File[];
 
 
   clearComposer?:
-    boolean;
+  boolean;
+
+
+  /**
+   * برای ارسال پیام در یک گفتگوی مشخص،
+   * بدون وابستگی به مقدار قدیمی activeConversation.
+   */
+  conversationIdOverride?:
+  string;
+
+
+  /**
+   * تاریخچه‌ای که باید برای مدل ارسال شود.
+   * هنگام ساخت شاخه جدید، فقط پیام‌های پیش از پیام ویرایش‌شده
+   * در این مقدار قرار می‌گیرند.
+   */
+  historyOverride?:
+  Message[];
 };
 
 
@@ -138,9 +190,9 @@ function getConversationTitle(
   return cleanMessage.length >
     32
     ? `${cleanMessage.slice(
-        0,
-        32
-      )}...`
+      0,
+      32
+    )}...`
 
     : cleanMessage;
 }
@@ -398,6 +450,38 @@ export default function ChatPageClient({
     );
 
 
+  const [
+    conversationBranches,
+
+    setConversationBranches,
+  ] =
+    useState<
+      ConversationBranch[]
+    >(
+      []
+    );
+
+
+  const [
+    activeBranchId,
+
+    setActiveBranchId,
+  ] =
+    useState(
+      ""
+    );
+
+
+  const [
+    branchLoading,
+
+    setBranchLoading,
+  ] =
+    useState(
+      false
+    );
+
+
   /* =====================================================
      Refs
   ===================================================== */
@@ -430,7 +514,7 @@ export default function ChatPageClient({
     ) ||
 
     conversations[
-      0
+    0
     ];
 
 
@@ -451,7 +535,7 @@ export default function ChatPageClient({
     ) ||
 
     assistantModes[
-      0
+    0
     ];
 
 
@@ -481,18 +565,20 @@ export default function ChatPageClient({
 
   const lastAssistantMessage =
     lastAssistantMessageIndex !==
-    -1
+      -1
       ? messages[
-          lastAssistantMessageIndex
-        ]?.content ||
+        lastAssistantMessageIndex
+      ]?.content ||
 
-        ""
+      ""
 
       : "";
 
 
   const shouldShowSmartActions =
     !loading &&
+
+    !branchLoading &&
 
     lastAssistantMessageIndex !==
     -1 &&
@@ -503,6 +589,39 @@ export default function ChatPageClient({
     );
 
 
+  const activeBranchIndex =
+    conversationBranches.findIndex(
+      (
+        branch
+      ) =>
+        branch.id ===
+        activeBranchId
+    );
+
+
+  const activeBranch =
+    activeBranchIndex >=
+      0
+      ? conversationBranches[
+      activeBranchIndex
+      ]
+      : null;
+
+
+  const canGoToPreviousBranch =
+    activeBranchIndex >
+    0;
+
+
+  const canGoToNextBranch =
+    activeBranchIndex >=
+    0 &&
+
+    activeBranchIndex <
+    conversationBranches.length -
+    1;
+
+
   /* =====================================================
      Create Conversation
   ===================================================== */
@@ -511,7 +630,7 @@ export default function ChatPageClient({
     async (
       assistantMode:
         AssistantModeId =
-          selectedModeId
+        selectedModeId
     ) => {
       const response =
         await fetch(
@@ -576,7 +695,7 @@ export default function ChatPageClient({
       return normalizeConversation(
         data
           .conversation as
-          Conversation
+        Conversation
       );
     };
 
@@ -700,7 +819,7 @@ export default function ChatPageClient({
           (
             data
               .conversations as
-              Conversation[]
+            Conversation[]
           ).map(
             normalizeConversation
           );
@@ -756,7 +875,7 @@ export default function ChatPageClient({
             .assistantMode
         );
       } catch (
-        error
+      error
       ) {
         console.error(
           "Load conversations error:",
@@ -770,6 +889,347 @@ export default function ChatPageClient({
         );
       } finally {
         setInitialLoading(
+          false
+        );
+      }
+    };
+
+
+  /* =====================================================
+     Conversation Branches
+  ===================================================== */
+
+  const loadConversationBranches =
+    async (
+      conversationId:
+        string,
+
+      manageLoading =
+        true
+    ) => {
+      if (
+        !conversationId
+      ) {
+        setConversationBranches(
+          []
+        );
+
+
+        setActiveBranchId(
+          ""
+        );
+
+
+        return [];
+      }
+
+
+      if (
+        manageLoading
+      ) {
+        setBranchLoading(
+          true
+        );
+      }
+
+
+      try {
+        const response =
+          await fetch(
+            `/api/conversations/${encodeURIComponent(
+              conversationId
+            )}/branches`,
+
+            {
+              cache:
+                "no-store",
+            }
+          );
+
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => null
+            );
+
+
+        if (
+          !response.ok ||
+          !data?.ok ||
+          !Array.isArray(
+            data.branches
+          )
+        ) {
+          throw new Error(
+            data?.message ||
+            data?.error ||
+            "خواندن شاخه‌های گفتگو انجام نشد."
+          );
+        }
+
+
+        const loadedBranches =
+          data.branches as
+          ConversationBranch[];
+
+
+        const nextActiveBranchId =
+          typeof data
+            .conversation
+            ?.activeBranchId ===
+            "string"
+            ? data
+              .conversation
+              .activeBranchId
+            : loadedBranches.find(
+              (
+                branch
+              ) =>
+                branch.isActive
+            )?.id ||
+            "";
+
+
+        setConversationBranches(
+          loadedBranches
+        );
+
+
+        setActiveBranchId(
+          nextActiveBranchId
+        );
+
+
+        return loadedBranches;
+      } catch (
+      error
+      ) {
+        console.error(
+          "Load conversation branches error:",
+
+          error
+        );
+
+
+        setConversationBranches(
+          []
+        );
+
+
+        setActiveBranchId(
+          ""
+        );
+
+
+        throw error;
+      } finally {
+        if (
+          manageLoading
+        ) {
+          setBranchLoading(
+            false
+          );
+        }
+      }
+    };
+
+
+  const reloadConversationFromServer =
+    async (
+      conversationId:
+        string
+    ) => {
+      const response =
+        await fetch(
+          "/api/conversations",
+
+          {
+            cache:
+              "no-store",
+          }
+        );
+
+
+      const data =
+        await response
+          .json()
+          .catch(
+            () => null
+          );
+
+
+      if (
+        !response.ok ||
+        !data?.ok ||
+        !Array.isArray(
+          data.conversations
+        )
+      ) {
+        throw new Error(
+          data?.message ||
+          data?.error ||
+          "بارگذاری مجدد گفتگو انجام نشد."
+        );
+      }
+
+
+      const loadedConversations =
+        (
+          data.conversations as
+          Conversation[]
+        ).map(
+          normalizeConversation
+        );
+
+
+      const refreshedConversation =
+        loadedConversations.find(
+          (
+            conversation
+          ) =>
+            conversation.id ===
+            conversationId
+        );
+
+
+      if (
+        !refreshedConversation
+      ) {
+        throw new Error(
+          "گفتگوی فعال پس از تغییر شاخه پیدا نشد."
+        );
+      }
+
+
+      setConversations(
+        loadedConversations
+      );
+
+
+      setActiveConversationId(
+        conversationId
+      );
+
+
+      setSelectedModeId(
+        refreshedConversation
+          .assistantMode
+      );
+
+
+      return refreshedConversation;
+    };
+
+
+  const handleSelectBranch =
+    async (
+      branchId:
+        string
+    ) => {
+      if (
+        loading ||
+        branchLoading ||
+        !activeConversation ||
+        !branchId ||
+        branchId ===
+        activeBranchId
+      ) {
+        return;
+      }
+
+
+      const conversationId =
+        activeConversation.id;
+
+
+      setBranchLoading(
+        true
+      );
+
+
+      clearSmartActions();
+
+
+      try {
+        const response =
+          await fetch(
+            `/api/conversations/${encodeURIComponent(
+              conversationId
+            )}/branches`,
+
+            {
+              method:
+                "PATCH",
+
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+
+              body:
+                JSON.stringify({
+                  branchId,
+                }),
+            }
+          );
+
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => null
+            );
+
+
+        if (
+          !response.ok ||
+          !data?.ok
+        ) {
+          throw new Error(
+            data?.message ||
+            data?.error ||
+            "تغییر شاخه گفتگو انجام نشد."
+          );
+        }
+
+
+        setActiveBranchId(
+          branchId
+        );
+
+
+        await reloadConversationFromServer(
+          conversationId
+        );
+
+
+        await loadConversationBranches(
+          conversationId,
+
+          false
+        );
+      } catch (
+      error
+      ) {
+        console.error(
+          "Select conversation branch error:",
+
+          error
+        );
+
+
+        alert(
+          error instanceof Error
+            ? error.message
+            : "تغییر شاخه گفتگو انجام نشد."
+        );
+      } finally {
+        setBranchLoading(
           false
         );
       }
@@ -829,7 +1289,7 @@ export default function ChatPageClient({
           );
         }
       } catch (
-        error
+      error
       ) {
         /**
          * خطای حافظه نباید
@@ -999,7 +1459,7 @@ export default function ChatPageClient({
         setSmartActions(
           data
             .actions as
-            SmartFollowUpAction[]
+          SmartFollowUpAction[]
         );
 
 
@@ -1012,7 +1472,7 @@ export default function ChatPageClient({
           )
         );
       } catch (
-        error
+      error
       ) {
         console.error(
           "Load smart followups error:",
@@ -1047,6 +1507,43 @@ export default function ChatPageClient({
     },
 
     []
+  );
+
+
+  useEffect(
+    () => {
+      if (
+        !activeConversationId
+      ) {
+        setConversationBranches(
+          []
+        );
+
+
+        setActiveBranchId(
+          ""
+        );
+
+
+        return;
+      }
+
+
+      void loadConversationBranches(
+        activeConversationId
+      ).catch(
+        () => {
+          /**
+           * خطا در اینجا ثبت شده است.
+           * رابط اصلی گفتگو نباید به‌خاطر خطای شاخه‌ها متوقف شود.
+           */
+        }
+      );
+    },
+
+    [
+      activeConversationId,
+    ]
   );
 
 
@@ -1328,11 +1825,11 @@ export default function ChatPageClient({
         (
           previous
         ) => [
-          newConversation,
+            newConversation,
 
 
-          ...previous,
-        ]
+            ...previous,
+          ]
       );
 
 
@@ -1445,7 +1942,7 @@ export default function ChatPageClient({
             modeId
           );
         } catch (
-          error
+        error
         ) {
           console.error(
             "Save conversation mode error:",
@@ -1473,7 +1970,7 @@ export default function ChatPageClient({
           );
         }
       } catch (
-        error
+      error
       ) {
         console.error(
           "Change mode error:",
@@ -1507,7 +2004,7 @@ export default function ChatPageClient({
           selectedModeId
         );
       } catch (
-        error
+      error
       ) {
         console.error(
           "New chat error:",
@@ -1694,7 +2191,7 @@ export default function ChatPageClient({
           []
         );
       } catch (
-        error
+      error
       ) {
         console.error(
           "Delete conversation error:",
@@ -1808,7 +2305,7 @@ export default function ChatPageClient({
             modeId
           );
         } catch (
-          error
+        error
         ) {
           console.error(
             "Save prompt mode error:",
@@ -1836,7 +2333,7 @@ export default function ChatPageClient({
           );
         }
       } catch (
-        error
+      error
       ) {
         console.error(
           "Use prompt error:",
@@ -1865,11 +2362,17 @@ export default function ChatPageClient({
 
 
       attachedFiles =
-        [],
+      [],
 
 
       clearComposer =
-        true,
+      true,
+
+
+      conversationIdOverride,
+
+
+      historyOverride,
     }:
       ExecuteMessageOptions
     ) => {
@@ -1902,7 +2405,16 @@ export default function ChatPageClient({
 
 
       let currentConversation =
-        activeConversation;
+        conversationIdOverride
+          ? conversations.find(
+            (
+              conversation
+            ) =>
+              conversation.id ===
+              conversationIdOverride
+          ) ||
+          activeConversation
+          : activeConversation;
 
 
       if (
@@ -1928,11 +2440,15 @@ export default function ChatPageClient({
 
 
       const currentConversationId =
+        conversationIdOverride ||
+
         currentConversation
           .id;
 
 
       const previousMessages =
+        historyOverride ||
+
         currentConversation
           .messages ||
 
@@ -1966,12 +2482,12 @@ export default function ChatPageClient({
       const shouldUpdateTitle =
         currentConversation
           .title ===
-          "گفتگوی جدید" &&
+        "گفتگوی جدید" &&
 
         currentConversation
           .messages
           .length ===
-          0;
+        0;
 
 
       if (
@@ -2004,14 +2520,14 @@ export default function ChatPageClient({
         (
           currentMessages
         ) => [
-          ...currentMessages,
+            ...currentMessages,
 
 
-          userMessage,
+            userMessage,
 
 
-          assistantMessage,
-        ]
+            assistantMessage,
+          ]
       );
 
 
@@ -2204,7 +2720,7 @@ export default function ChatPageClient({
 
           for (
             const line of
-              lines
+            lines
           ) {
             const trimmedLine =
               line.trim();
@@ -2235,7 +2751,7 @@ export default function ChatPageClient({
               !data ||
 
               data ===
-                "[DONE]"
+              "[DONE]"
             ) {
               continue;
             }
@@ -2251,8 +2767,8 @@ export default function ChatPageClient({
               const content =
                 json
                   .choices?.[
-                    0
-                  ]
+                  0
+                ]
                   ?.delta
                   ?.content ||
 
@@ -2298,7 +2814,7 @@ export default function ChatPageClient({
                 );
               }
             } catch (
-              error
+            error
             ) {
               console.error(
                 "Error parsing stream chunk:",
@@ -2358,7 +2874,7 @@ export default function ChatPageClient({
           currentConversationId
         );
       } catch (
-        error
+      error
       ) {
         console.error(
           "Chat error:",
@@ -2375,30 +2891,557 @@ export default function ChatPageClient({
           (
             currentMessages
           ) => [
-            ...currentMessages
-              .slice(
-                0,
-                -1
-              ),
+              ...currentMessages
+                .slice(
+                  0,
+                  -1
+                ),
 
 
-            {
-              role:
-                "assistant",
+              {
+                role:
+                  "assistant",
 
 
-              content:
-                error instanceof
-                Error
-                  ? error
+                content:
+                  error instanceof
+                    Error
+                    ? error
                       .message
 
-                  : "❌ خطا در دریافت پاسخ. لطفاً دوباره تلاش کنید.",
-            },
-          ]
+                    : "❌ خطا در دریافت پاسخ. لطفاً دوباره تلاش کنید.",
+              },
+            ]
         );
       } finally {
         setLoading(
+          false
+        );
+      }
+    };
+
+
+  /* =====================================================
+     Edit User Message
+  ===================================================== */
+
+  const handleEditMessage =
+    async (
+      messageId:
+        string,
+
+
+      editedContent:
+        string
+    ) => {
+      if (
+        loading ||
+        branchLoading ||
+        !activeConversation
+      ) {
+        return;
+      }
+
+
+      const normalizedContent =
+        editedContent.trim();
+
+
+      if (
+        !normalizedContent
+      ) {
+        throw new Error(
+          "متن پیام نمی‌تواند خالی باشد."
+        );
+      }
+
+
+      const conversationId =
+        activeConversation.id;
+
+
+      const editedMessageIndex =
+        activeConversation
+          .messages
+          .findIndex(
+            (
+              message
+            ) =>
+              message.id ===
+              messageId
+          );
+
+
+      if (
+        editedMessageIndex ===
+        -1
+      ) {
+        throw new Error(
+          "پیام انتخاب‌شده در گفتگوی فعال پیدا نشد."
+        );
+      }
+
+
+      const branchHistory =
+        activeConversation
+          .messages
+          .slice(
+            0,
+
+
+            editedMessageIndex
+          );
+
+
+      setBranchLoading(
+        true
+      );
+
+
+      clearSmartActions();
+
+
+      try {
+        const response =
+          await fetch(
+            "/api/messages/edit",
+
+
+            {
+              method:
+                "PATCH",
+
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+
+              body:
+                JSON.stringify({
+                  conversationId,
+
+
+                  messageId,
+
+
+                  content:
+                    normalizedContent,
+                }),
+            }
+          );
+
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => null
+            );
+
+
+        if (
+          !response.ok ||
+          !data?.ok
+        ) {
+          throw new Error(
+            data?.message ||
+            data?.error ||
+            "ساخت شاخه جدید برای پیام ویرایش‌شده انجام نشد."
+          );
+        }
+
+
+        const newBranchId =
+          typeof data
+            .edit
+            ?.newBranch
+            ?.id ===
+            "string"
+            ? data
+              .edit
+              .newBranch
+              .id
+            : "";
+
+
+        if (
+          newBranchId
+        ) {
+          setActiveBranchId(
+            newBranchId
+          );
+        }
+
+
+        /**
+         * ابتدا نمای محلی را تا پیش از پیام ویرایش‌شده
+         * به عقب برمی‌گردانیم. سپس متن اصلاح‌شده در همان
+         * شاخه جدید به مدل ارسال می‌شود.
+         */
+        updateConversationMessages(
+          conversationId,
+
+
+          () =>
+            branchHistory
+        );
+
+
+        setInput(
+          ""
+        );
+
+
+        setFiles(
+          []
+        );
+
+
+        await executeMessage({
+          apiMessageText:
+            normalizedContent,
+
+
+          displayMessageText:
+            normalizedContent,
+
+
+          attachedFiles:
+            [],
+
+
+          clearComposer:
+            false,
+
+
+          conversationIdOverride:
+            conversationId,
+
+
+          historyOverride:
+            branchHistory,
+        });
+
+
+        await reloadConversationFromServer(
+          conversationId
+        );
+
+
+        await loadConversationBranches(
+          conversationId,
+
+
+          false
+        );
+      } catch (
+      error
+      ) {
+        console.error(
+          "Edit message error:",
+
+
+          error
+        );
+
+
+        throw error;
+      } finally {
+        setBranchLoading(
+          false
+        );
+      }
+    };
+
+
+  /* =====================================================
+     Regenerate Assistant Message
+  ===================================================== */
+
+  const handleRegenerateMessage =
+    async (
+      assistantMessageId:
+        string
+    ) => {
+      if (
+        loading ||
+        branchLoading ||
+        !activeConversation
+      ) {
+        return;
+      }
+
+
+      const conversationId =
+        activeConversation.id;
+
+
+      const assistantMessageIndex =
+        activeConversation
+          .messages
+          .findIndex(
+            (
+              message
+            ) =>
+              message.id ===
+              assistantMessageId &&
+              message.role ===
+              "assistant"
+          );
+
+
+      if (
+        assistantMessageIndex ===
+        -1
+      ) {
+        throw new Error(
+          "پاسخ انتخاب‌شده در گفتگوی فعال پیدا نشد."
+        );
+      }
+
+
+      let sourceUserMessageIndex =
+        -1;
+
+
+      for (
+        let index =
+          assistantMessageIndex -
+          1;
+
+        index >=
+        0;
+
+        index--
+      ) {
+        if (
+          activeConversation
+            .messages[
+            index
+          ]
+            .role ===
+          "user"
+        ) {
+          sourceUserMessageIndex =
+            index;
+
+
+          break;
+        }
+      }
+
+
+      if (
+        sourceUserMessageIndex ===
+        -1
+      ) {
+        throw new Error(
+          "پیام کاربر مرتبط با این پاسخ پیدا نشد."
+        );
+      }
+
+
+      const sourceUserMessage =
+        activeConversation
+          .messages[
+        sourceUserMessageIndex
+        ];
+
+
+      if (
+        !sourceUserMessage.id
+      ) {
+        throw new Error(
+          "شناسه پیام کاربر برای بازتولید پاسخ در دسترس نیست."
+        );
+      }
+
+
+      const sourcePrompt =
+        sourceUserMessage
+          .content
+          .trim();
+
+
+      if (
+        !sourcePrompt
+      ) {
+        throw new Error(
+          "متن پیام کاربر برای بازتولید پاسخ خالی است."
+        );
+      }
+
+
+      /**
+       * فقط پیام‌های قبل از درخواست اصلی
+       * در شاخه جدید کپی می‌شوند.
+       */
+      const branchHistory =
+        activeConversation
+          .messages
+          .slice(
+            0,
+
+            sourceUserMessageIndex
+          );
+
+
+      setBranchLoading(
+        true
+      );
+
+
+      clearSmartActions();
+
+
+      try {
+        /**
+         * API ویرایش پیام، یک شاخه جدید ایجاد می‌کند.
+         * در بازتولید پاسخ، متن پیام کاربر تغییر نمی‌کند.
+         */
+        const response =
+          await fetch(
+            "/api/messages/edit",
+
+            {
+              method:
+                "PATCH",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body:
+                JSON.stringify({
+                  conversationId,
+
+                  messageId:
+                    sourceUserMessage.id,
+
+                  content:
+                    sourcePrompt,
+                }),
+            }
+          );
+
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => null
+            );
+
+
+        if (
+          !response.ok ||
+          !data?.ok
+        ) {
+          throw new Error(
+            data?.message ||
+            data?.error ||
+            "ساخت شاخه جدید برای بازتولید پاسخ انجام نشد."
+          );
+        }
+
+
+        const newBranchId =
+          typeof data
+            .edit
+            ?.newBranch
+            ?.id ===
+            "string"
+            ? data
+              .edit
+              .newBranch
+              .id
+            : "";
+
+
+        if (
+          newBranchId
+        ) {
+          setActiveBranchId(
+            newBranchId
+          );
+        }
+
+
+        /**
+         * نمای گفتگو تا قبل از پیام کاربر
+         * به وضعیت شاخه جدید برمی‌گردد.
+         */
+        updateConversationMessages(
+          conversationId,
+
+          () =>
+            branchHistory
+        );
+
+
+        setInput(
+          ""
+        );
+
+
+        setFiles(
+          []
+        );
+
+
+        /**
+         * همان پیام کاربر دوباره برای مدل ارسال می‌شود.
+         */
+        await executeMessage({
+          apiMessageText:
+            sourcePrompt,
+
+          displayMessageText:
+            sourcePrompt,
+
+          attachedFiles:
+            [],
+
+          clearComposer:
+            false,
+
+          conversationIdOverride:
+            conversationId,
+
+          historyOverride:
+            branchHistory,
+        });
+
+
+        /**
+         * پیام‌های دارای شناسه واقعی از سرور دریافت می‌شوند.
+         */
+        await reloadConversationFromServer(
+          conversationId
+        );
+
+
+        await loadConversationBranches(
+          conversationId,
+
+          false
+        );
+      } catch (
+      error
+      ) {
+        console.error(
+          "Regenerate assistant message error:",
+
+          error
+        );
+
+
+        throw error;
+      } finally {
+        setBranchLoading(
           false
         );
       }
@@ -2756,9 +3799,40 @@ export default function ChatPageClient({
 
 
           disabled={
-            loading
+            loading ||
+            branchLoading
           }
         />
+
+
+        {/* =============================================
+            User Credits Badge
+        ============================================= */}
+
+        <div
+          style={{
+            width:
+              "100%",
+
+
+            maxWidth:
+              360,
+
+
+            marginRight:
+              16,
+
+
+            marginTop:
+              8,
+
+
+            marginBottom:
+              12,
+          }}
+        >
+          <UserCreditsBadge />
+        </div>
 
 
         {/* =============================================
@@ -2772,9 +3846,162 @@ export default function ChatPageClient({
           }
         >
           {
+            conversationBranches.length >
+            1 && (
+              <div
+                className={
+                  styles
+                    .branchNavigator
+                }
+
+
+                dir="rtl"
+              >
+                <button
+                  type="button"
+
+
+                  className={
+                    styles
+                      .branchNavigatorButton
+                  }
+
+
+                  onClick={
+                    () => {
+                      const previousBranch =
+                        conversationBranches[
+                        activeBranchIndex -
+                        1
+                        ];
+
+
+                      if (
+                        previousBranch
+                      ) {
+                        void handleSelectBranch(
+                          previousBranch.id
+                        );
+                      }
+                    }
+                  }
+
+
+                  disabled={
+                    !canGoToPreviousBranch ||
+                    loading ||
+                    branchLoading
+                  }
+
+
+                  title="شاخه قبلی"
+
+
+                  aria-label="شاخه قبلی"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+
+
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="m15 18-6-6 6-6"
+                    />
+                  </svg>
+                </button>
+
+
+                <div
+                  className={
+                    styles
+                      .branchNavigatorInfo
+                  }
+                >
+                  <strong>
+                    شاخه {
+                      activeBranchIndex +
+                      1
+                    } از {
+                      conversationBranches.length
+                    }
+                  </strong>
+
+
+                  <span>
+                    {
+                      branchLoading
+                        ? "در حال تغییر شاخه..."
+                        : activeBranch
+                          ?.title ||
+                        "نسخه گفتگو"
+                    }
+                  </span>
+                </div>
+
+
+                <button
+                  type="button"
+
+
+                  className={
+                    styles
+                      .branchNavigatorButton
+                  }
+
+
+                  onClick={
+                    () => {
+                      const nextBranch =
+                        conversationBranches[
+                        activeBranchIndex +
+                        1
+                        ];
+
+
+                      if (
+                        nextBranch
+                      ) {
+                        void handleSelectBranch(
+                          nextBranch.id
+                        );
+                      }
+                    }
+                  }
+
+
+                  disabled={
+                    !canGoToNextBranch ||
+                    loading ||
+                    branchLoading
+                  }
+
+
+                  title="شاخه بعدی"
+
+
+                  aria-label="شاخه بعدی"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+
+
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="m9 18 6-6-6-6"
+                    />
+                  </svg>
+                </button>
+              </div>
+            )
+          }
+
+
+          {
             messages
               .length ===
-              0 && (
+            0 && (
               <WelcomePanel
                 selectedModeId={
                   selectedModeId
@@ -2806,25 +4033,40 @@ export default function ChatPageClient({
                   key={`${activeConversationId}-${index}`}
                 >
                   <MessageBubble
+                    messageId={
+                      message.id
+                    }
+
                     role={
                       message
                         .role
                     }
-
 
                     content={
                       message
                         .content
                     }
 
-
                     isLoading={
                       loading &&
 
                       index ===
-                        messages
-                          .length -
-                        1
+                      messages
+                        .length -
+                      1
+                    }
+
+                    disabled={
+                      loading ||
+                      branchLoading
+                    }
+
+                    onEditMessage={
+                      handleEditMessage
+                    }
+
+                    onRegenerateMessage={
+                      handleRegenerateMessage
                     }
                   />
 
@@ -2832,11 +4074,11 @@ export default function ChatPageClient({
                   {
                     message
                       .role ===
-                      "assistant" &&
+                    "assistant" &&
 
 
                     index ===
-                      lastAssistantMessageIndex &&
+                    lastAssistantMessageIndex &&
 
 
                     shouldShowSmartActions && (
@@ -2857,7 +4099,8 @@ export default function ChatPageClient({
 
 
                         disabled={
-                          loading
+                          loading ||
+                          branchLoading
                         }
 
 
@@ -2923,7 +4166,8 @@ export default function ChatPageClient({
 
 
           loading={
-            loading
+            loading ||
+            branchLoading
           }
 
 

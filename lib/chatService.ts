@@ -2,20 +2,22 @@
 
 import type { Message } from "../types/chat";
 
+import {
+  resolveModelPolicy,
+} from "./assistant/demoModelPolicy";
+
+import {
+  registerLocalProxy,
+} from "./server/registerLocalProxy";
+
+registerLocalProxy();
+
 /**
  * مسیر رسمی Chat Completions در OpenRouter
  */
 const OPENROUTER_CHAT_COMPLETIONS_URL =
   "https://openrouter.ai/api/v1/chat/completions";
 
-/**
- * مدل پیش‌فرض پروژه
- *
- * اگر هیچ مدل مشخصی از گفتگو دریافت نشود،
- * OpenRouter به‌صورت خودکار مدل مناسب را انتخاب می‌کند.
- */
-const DEFAULT_OPENROUTER_MODEL =
-  "openrouter/auto";
 
 /**
  * دریافت امن کلید OpenRouter
@@ -36,23 +38,6 @@ function getOpenRouterApiKey(): string {
   return apiKey;
 }
 
-/**
- * پاک‌سازی شناسه مدل
- *
- * اگر مقدار مدل خالی یا نامعتبر باشد،
- * مدل پیش‌فرض استفاده می‌شود.
- */
-function normalizeModelId(
-  model?: string
-): string {
-  const cleanModel =
-    model?.trim();
-
-  return (
-    cleanModel ||
-    DEFAULT_OPENROUTER_MODEL
-  );
-}
 
 /**
  * اطمینان از داشتن پروتکل در URL
@@ -64,12 +49,8 @@ function normalizeSiteUrl(
     value.trim();
 
   if (
-    cleanValue.startsWith(
-      "http://"
-    ) ||
-    cleanValue.startsWith(
-      "https://"
-    )
+    cleanValue.startsWith("http://") ||
+    cleanValue.startsWith("https://")
   ) {
     return cleanValue;
   }
@@ -77,11 +58,11 @@ function normalizeSiteUrl(
   return `https://${cleanValue}`;
 }
 
+
 /**
  * تعیین آدرس سایت
  *
  * ترتیب انتخاب:
- *
  * 1. متغیر اختصاصی پروژه
  * 2. دامنه اصلی پروژه در Vercel
  * 3. دامنه Deployment در Vercel
@@ -89,9 +70,7 @@ function normalizeSiteUrl(
  */
 function getApplicationUrl(): string {
   const configuredSiteUrl =
-    process.env
-      .OPENROUTER_SITE_URL
-      ?.trim();
+    process.env.OPENROUTER_SITE_URL?.trim();
 
   if (configuredSiteUrl) {
     return normalizeSiteUrl(
@@ -103,9 +82,7 @@ function getApplicationUrl(): string {
     process.env
       .VERCEL_PROJECT_PRODUCTION_URL
       ?.trim() ||
-    process.env
-      .VERCEL_URL
-      ?.trim();
+    process.env.VERCEL_URL?.trim();
 
   if (vercelHost) {
     return normalizeSiteUrl(
@@ -115,6 +92,7 @@ function getApplicationUrl(): string {
 
   return "http://localhost:3000";
 }
+
 
 /**
  * عنوان برنامه در OpenRouter
@@ -128,22 +106,16 @@ function getApplicationTitle(): string {
   );
 }
 
+
 /**
  * ارسال پیام‌ها به مدل انتخاب‌شده در OpenRouter
  *
- * ورودی‌ها:
- *
- * messages:
- * پیام‌های نهایی شامل system prompt،
- * حافظه، تاریخچه و پیام فعلی کاربر
- *
- * model:
- * شناسه مدل انتخاب‌شده برای همان گفتگو
+ * این تابع فقط مسئول ارتباط با OpenRouter است.
+ * تصمیم‌گیری درباره مدل در demoModelPolicy انجام می‌شود.
  */
 export async function getOpenRouterStream(
   messages: Message[],
-  model: string =
-    DEFAULT_OPENROUTER_MODEL
+  model?: string | null
 ): Promise<Response> {
   /**
    * جلوگیری از ارسال درخواست خالی
@@ -160,16 +132,41 @@ export async function getOpenRouterStream(
   const apiKey =
     getOpenRouterApiKey();
 
-  const selectedModel =
-    normalizeModelId(
-      model
-    );
+  const modelPolicy =
+    resolveModelPolicy(model);
 
   const applicationUrl =
     getApplicationUrl();
 
   const applicationTitle =
     getApplicationTitle();
+
+  /**
+   * لاگ توسعه‌ای برای کنترل مصرف.
+   * در Production هم اطلاعات حساس چاپ نمی‌کند.
+   */
+  console.log(
+    "[model-policy]",
+    {
+      requestedModel:
+        modelPolicy.requestedModel,
+
+      resolvedModel:
+        modelPolicy.resolvedModel,
+
+      usageTier:
+        modelPolicy.usageTier,
+
+      maxOutputTokens:
+        modelPolicy.maxOutputTokens,
+
+      isFree:
+        modelPolicy.isFree,
+
+      allowPaidFallback:
+        modelPolicy.allowPaidFallback,
+    }
+  );
 
   /**
    * درخواست اصلی به OpenRouter
@@ -190,11 +187,16 @@ export async function getOpenRouterStream(
           "text/event-stream",
 
         /**
-         * آدرس و عنوان برنامه
-         * برای شناسایی برنامه در OpenRouter
+         * آدرس و عنوان برنامه برای شناسایی برنامه در OpenRouter
          */
         "HTTP-Referer":
           applicationUrl,
+
+        /**
+         * برای سازگاری بیشتر با OpenRouter
+         */
+        "X-Title":
+          applicationTitle,
 
         "X-OpenRouter-Title":
           applicationTitle,
@@ -202,20 +204,24 @@ export async function getOpenRouterStream(
 
       body: JSON.stringify({
         /**
-         * این مقدار در مرحله بعد
-         * از selected_model گفتگو
-         * در Supabase دریافت می‌شود.
+         * مدل نهایی و امن‌شده
          */
         model:
-          selectedModel,
+          modelPolicy.resolvedModel,
 
         messages,
 
         /**
-         * پاسخ به‌صورت تدریجی
-         * به رابط کاربری ارسال می‌شود.
+         * کنترل مصرف خروجی
          */
-        stream: true,
+        max_tokens:
+          modelPolicy.maxOutputTokens,
+
+        /**
+         * پاسخ به‌صورت تدریجی به رابط کاربری ارسال می‌شود
+         */
+        stream:
+          true,
       }),
     }
   );

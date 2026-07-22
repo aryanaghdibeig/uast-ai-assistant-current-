@@ -1,5 +1,5 @@
 /* =========================
-   App Shell
+   app/Chat.module.css
 ========================= */
 
 .appShell {
@@ -1641,5 +1641,588 @@
 
   .modelSelectorMeta {
     grid-template-columns: 1fr;
+  }
+}
+
+.markdownContent {
+  width: 100%;
+  line-height: 1.9;
+  font-size: 14px;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.markdownParagraph {
+  margin: 0 0 10px;
+}
+
+.markdownParagraph:last-child {
+  margin-bottom: 0;
+}
+
+.markdownH1,
+.markdownH2,
+.markdownH3 {
+  margin: 14px 0 8px;
+  font-weight: 800;
+  line-height: 1.6;
+  color: #0f172a;
+}
+
+.markdownH1 {
+  font-size: 20px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 6px;
+}
+
+.markdownH2 {
+  font-size: 17px;
+}
+
+.markdownH3 {
+  font-size: 15px;
+}
+
+.markdownList {
+  margin: 8px 0 12px;
+  padding-right: 24px;
+}
+
+.markdownListItem {
+  margin-bottom: 6px;
+}
+
+.markdownListItem::marker {
+  color: #2563eb;
+}
+
+.markdownBlockquote {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-right: 4px solid #2563eb;
+  background: #eff6ff;
+  color: #1e3a8a;
+  border-radius: 10px;
+}
+
+.markdownHr {
+  margin: 16px 0;
+  border: none;
+  border-top: 1px solid #e5e7eb;
+}
+
+.markdownLink {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.markdownLink:hover {
+  text-decoration: underline;
+}
+
+.markdownImage {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  margin: 10px 0;
+}
+
+.inlineCode {
+  direction: ltr;
+  unicode-bidi: plaintext;
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.08);
+  color: #be123c;
+  font-family: Consolas, Monaco, "Courier New", monospace;
+  font-size: 13px;
+}
+
+.codeBlockWrapper {
+  margin: 12px 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #1f2937;
+  background: #0f172a;
+}
+
+.codeBlockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #111827;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-family: Consolas, Monaco, "Courier New", monospace;
+}
+
+.codeCopyButton {
+  border: 1px solid rgba(203, 213, 225, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e7eb;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.codeCopyButton:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.markdownPre {
+  margin: 0;
+  padding: 14px;
+  overflow-x: auto;
+  background: #0f172a;
+  color: #e5e7eb;
+  direction: ltr;
+  text-align: left;
+  font-family: Consolas, Monaco, "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.markdownPre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.markdownTableWrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin: 12px 0;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+.markdownTable {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  direction: rtl;
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.markdownTable thead {
+  background: #f8fafc;
+}
+
+.markdownTable th,
+.markdownTable td {
+  border: 1px solid #e5e7eb;
+  padding: 10px 12px;
+  text-align: right;
+  vertical-align: top;
+  line-height: 1.8;
+}
+
+.markdownTable th {
+  font-weight: 800;
+  color: #0f172a;
+  background: #f1f5f9;
+}
+
+.markdownTable td {
+  color: #334155;
+}
+
+.markdownTable tbody tr:nth-child(even) {
+  background: #f9fafb;
+}
+
+.markdownContent input[type="checkbox"] {
+  margin-left: 8px;
+  transform: translateY(2px);
+}
+
+.plainMessageContent {
+  white-space: pre-wrap;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+
+.markdownContent {
+  white-space: normal;
+}
+
+.markdownContent p:empty {
+  display: none;
+}
+
+.markdownContent br + br {
+  display: none;
+}
+
+.markdownContent > *:first-child {
+  margin-top: 0;
+}
+
+.markdownContent > *:last-child {
+  margin-bottom: 0;
+}
+
+.markdownContent h1,
+.markdownContent h2,
+.markdownContent h3,
+.markdownContent h4 {
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+.markdownContent p {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.markdownTableWrapper {
+  margin-top: 8px;
+  margin-bottom: 10px;
+}
+
+.markdownContent table {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* =====================================================
+   Message Actions
+===================================================== */
+
+.messageActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+
+.actionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+
+.actionButton:hover {
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(100, 116, 139, 0.65);
+}
+
+
+.actionButton:active {
+  transform: scale(0.97);
+}
+
+
+.actionButton:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* =========================
+   Conversation Branch Navigator
+========================= */
+
+.branchNavigator {
+  width: min(760px, 92%);
+  min-height: 54px;
+  margin: 0 auto 4px;
+  padding: 8px 10px;
+  border: 1px solid #dbe3ef;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  direction: rtl;
+}
+
+.branchNavigatorButton {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border: 1px solid #dbe3ef;
+  border-radius: 11px;
+  background: #ffffff;
+  color: #334155;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.branchNavigatorButton svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.branchNavigatorButton:hover:not(:disabled) {
+  border-color: #60a5fa;
+  background: #eff6ff;
+  color: #1d4ed8;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.12);
+  transform: translateY(-1px);
+}
+
+.branchNavigatorButton:focus-visible {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.branchNavigatorButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+  background: #f8fafc;
+  box-shadow: none;
+}
+
+.branchNavigatorInfo {
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  text-align: center;
+  direction: rtl;
+}
+
+.branchNavigatorInfo strong {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.branchNavigatorInfo span {
+  max-width: 280px;
+  color: #64748b;
+  font-size: 10.5px;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 720px) {
+  .branchNavigator {
+    width: calc(100% - 8px);
+    margin-bottom: 2px;
+  }
+
+  .branchNavigatorInfo {
+    min-width: 120px;
+  }
+
+  .branchNavigatorInfo span {
+    max-width: 170px;
+  }
+}
+
+/* =========================
+   Professional Message Actions
+   Keep the original bubble layout
+========================= */
+
+.bubble {
+  position: relative;
+  overflow: visible;
+}
+
+/*
+ * نوار ابزار پیام دیگر فضای محتوای پیام
+ * را اشغال نمی‌کند و روی کادر شناور است.
+ */
+.messageActions {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  z-index: 3;
+
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(3px);
+
+  transition:
+    opacity 0.16s ease,
+    visibility 0.16s ease,
+    transform 0.16s ease;
+}
+
+/*
+ * نمایش ابزارها هنگام قرار گرفتن ماوس
+ * روی همان پیام یا فوکوس صفحه‌کلید
+ */
+.messageRow:hover .messageActions,
+.messageActions:focus-within {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+/*
+ * ظاهر عمومی دکمه کپی و ویرایش
+ */
+.actionButton {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+
+  border: 1px solid #d6deea;
+  border-radius: 9px;
+
+  background: rgba(255, 255, 255, 0.96);
+  color: #475569;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  cursor: pointer;
+
+  /*
+   * متن‌هایی مانند «کپی پاسخ» مخفی می‌شوند
+   * و فقط نماد حرفه‌ای نمایش داده می‌شود.
+   */
+  font-size: 0;
+  line-height: 1;
+
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.actionButton:hover:not(:disabled) {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+}
+
+.actionButton:focus-visible {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow:
+    0 0 0 3px rgba(37, 99, 235, 0.14),
+    0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.actionButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* نماد کپی */
+.actionButton[aria-label*="کپی"]::before {
+  content: "⧉";
+  font-size: 17px;
+  font-family: Arial, sans-serif;
+  font-weight: 700;
+}
+
+/* نماد ویرایش */
+.actionButton[aria-label*="ویرایش"]::before {
+  content: "✎";
+  font-size: 17px;
+  font-family: Arial, sans-serif;
+  font-weight: 700;
+}
+
+/*
+ * پس از کپی موفق، علامت تأیید نمایش داده شود.
+ * این حالت زمانی فعال می‌شود که متن دکمه «کپی شد» باشد.
+ */
+.actionButton[title*="کپی شد"]::before {
+  content: "✓";
+  font-size: 17px;
+  color: #059669;
+}
+
+/*
+ * برای جلوگیری از تداخل ابزارها با آخرین خط متن
+ */
+.aiBubble,
+.userBubble {
+  padding-bottom: 40px;
+}
+
+/*
+ * در پیام‌های خیلی کوتاه، اندازه کادر
+ * بیش از حد بزرگ نشود.
+ */
+.plainMessageContent,
+.markdownContent {
+  min-width: 0;
+}
+
+/*
+ * ساختار متن Markdown مانند قبل باقی بماند.
+ */
+.markdownContent {
+  white-space: normal;
+}
+
+.markdownParagraph:first-child {
+  margin-top: 0;
+}
+
+.markdownParagraph:last-child {
+  margin-bottom: 0;
+}
+
+/* نمایش دائمی ابزارها در صفحه‌های لمسی */
+@media (hover: none) {
+  .messageActions {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
   }
 }

@@ -8,6 +8,12 @@ import {
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
 
+import {
+  registerLocalProxy,
+} from "@/lib/server/registerLocalProxy";
+
+registerLocalProxy();
+
 
 export const runtime =
   "nodejs";
@@ -236,7 +242,7 @@ export async function GET() {
       {
         status:
           500,
-        }
-      );
+      }
+    );
   }
 }

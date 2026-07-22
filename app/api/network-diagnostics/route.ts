@@ -8,6 +8,12 @@ import {
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
 
+import {
+  registerLocalProxy,
+} from "@/lib/server/registerLocalProxy";
+
+registerLocalProxy();
+
 
 export const runtime =
   "nodejs";

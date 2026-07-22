@@ -1,10 +1,16 @@
 // app/api/chat/route.ts
 
-import { NextRequest } from "next/server";
+import {
+  NextRequest,
+} from "next/server";
 
-import { buildFilesContext } from "@/lib/file-utils";
+import {
+  buildFilesContext,
+} from "@/lib/file-utils";
 
-import { getOpenRouterStream } from "@/lib/chatService";
+import {
+  getOpenRouterStream,
+} from "@/lib/chatService";
 
 import type {
   AssistantModeId,
@@ -41,6 +47,19 @@ import {
   embedNewMessages,
 } from "@/lib/assistant/automaticMessageEmbeddings";
 
+import {
+  getDefaultModelForCurrentMode,
+} from "@/lib/assistant/demoModelPolicy";
+
+import {
+  addTokenUsageByDecision,
+  ensureUserAiCredits,
+  estimateMessagesTokens,
+  estimateTextTokens,
+  markUpgradeWarningShown,
+  resolveModelForUserCredits,
+} from "@/lib/assistant/userCredits";
+
 
 export const runtime =
   "nodejs";
@@ -68,6 +87,9 @@ type ConversationRecord = {
   user_id:
     string;
 
+  active_branch_id:
+    string | null;
+
   conversation_summary:
     string | null;
 
@@ -88,13 +110,36 @@ type ConversationRecord = {
 };
 
 
+type ConversationBranchRecord = {
+  id:
+    string;
+
+  conversation_id:
+    string;
+};
+
+
+type BranchHistoryMessageRecord = {
+  role:
+    | "user"
+    | "assistant"
+    | "system";
+
+  content:
+    string;
+
+  created_at:
+    string;
+};
+
+
 type SavedMessageRecord = {
   id:
     string;
 
   role:
-    "user" |
-    "assistant";
+    | "user"
+    | "assistant";
 
   content:
     string;
@@ -112,9 +157,9 @@ type SemanticMemoryLoadResult = {
     number;
 
   source:
-    "mock" |
-    "openrouter" |
-    "none";
+    | "mock"
+    | "openrouter"
+    | "none";
 };
 
 
@@ -139,15 +184,14 @@ const MIN_SEMANTIC_QUERY_LENGTH =
 
 
 /**
- * اگر برای گفتگو مدلی انتخاب نشده باشد،
- * OpenRouter انتخاب مدل را به‌صورت خودکار انجام می‌دهد.
+ * مدل پیش‌فرض براساس سیاست مرکزی مدل‌ها
  */
 const DEFAULT_OPENROUTER_MODEL =
-  "openrouter/auto";
+  getDefaultModelForCurrentMode();
 
 
 /* =====================================================
-   General helpers
+   General Helpers
 ===================================================== */
 
 function getConversationTitle(
@@ -168,10 +212,9 @@ function getConversationTitle(
   return cleanMessage.length >
     32
     ? `${cleanMessage.slice(
-        0,
-
-        32
-      )}...`
+      0,
+      32
+    )}...`
     : cleanMessage;
 }
 
@@ -216,12 +259,12 @@ function getAssistantModeLabel(
 
 
 /**
- * خواندن امن مدل انتخاب‌شده
+ * خواندن مدل درخواستی گفتگو
  *
- * اگر selected_model خالی یا null باشد،
- * مدل خودکار OpenRouter استفاده می‌شود.
+ * این تابع فقط مقدار ذخیره‌شده در گفتگو را تمیز می‌کند.
+ * تصمیم نهایی مجاز بودن مدل در userCredits.ts انجام می‌شود.
  */
-function getSelectedModel(
+function getRequestedModel(
   value:
     unknown
 ) {
@@ -237,8 +280,14 @@ function getSelectedModel(
     value.trim();
 
 
-  return cleanValue ||
-    DEFAULT_OPENROUTER_MODEL;
+  if (
+    !cleanValue
+  ) {
+    return DEFAULT_OPENROUTER_MODEL;
+  }
+
+
+  return cleanValue;
 }
 
 
@@ -275,8 +324,8 @@ function getStringMessageContent(
   return typeof message.content ===
     "string"
     ? message
-        .content
-        .trim()
+      .content
+      .trim()
     : "";
 }
 
@@ -291,22 +340,18 @@ function normalizeComparableText(
     )
     .replace(
       /ي/g,
-
       "ی"
     )
     .replace(
       /ك/g,
-
       "ک"
     )
     .replace(
       /[^\p{L}\p{N}]+/gu,
-
       " "
     )
     .replace(
       /\s+/g,
-
       " "
     )
     .trim()
@@ -315,7 +360,471 @@ function normalizeComparableText(
 
 
 /* =====================================================
-   Recent history
+   Active Conversation Branch
+===================================================== */
+
+/**
+ * مقدار active_branch_id را برای یک گفتگو ذخیره می‌کند.
+ */
+async function updateConversationActiveBranch(
+  input: {
+    supabase:
+      SupabaseServerClient;
+
+    conversationId:
+      string;
+
+    userId:
+      string;
+
+    branchId:
+      string;
+  }
+) {
+  const {
+    error,
+  } =
+    await input.supabase
+      .from(
+        "conversations"
+      )
+      .update({
+        active_branch_id:
+          input.branchId,
+
+        updated_at:
+          new Date()
+            .toISOString(),
+      })
+      .eq(
+        "id",
+        input.conversationId
+      )
+      .eq(
+        "user_id",
+        input.userId
+      );
+
+
+  if (
+    error
+  ) {
+    throw new Error(
+      error.message
+    );
+  }
+}
+
+
+/**
+ * شاخه فعال گفتگو را پیدا می‌کند.
+ *
+ * ترتیب تصمیم‌گیری:
+ * 1. شاخه فعال ذخیره‌شده در conversations
+ * 2. اولین شاخه موجود
+ * 3. ساخت شاخه اصلی برای گفتگوهای جدید یا قدیمی
+ */
+async function ensureActiveConversationBranch(
+  input: {
+    supabase:
+      SupabaseServerClient;
+
+    conversation:
+      ConversationRecord;
+
+    userId:
+      string;
+  }
+) {
+  const {
+    supabase,
+    conversation,
+    userId,
+  } =
+    input;
+
+
+  /* -------------------------------------------------
+     1. Validate stored active branch
+  -------------------------------------------------- */
+
+  if (
+    conversation
+      .active_branch_id
+  ) {
+    const {
+      data:
+        activeBranchData,
+
+      error:
+        activeBranchError,
+    } =
+      await supabase
+        .from(
+          "conversation_branches"
+        )
+        .select(
+          `
+            id,
+            conversation_id
+          `
+        )
+        .eq(
+          "id",
+          conversation
+            .active_branch_id
+        )
+        .eq(
+          "conversation_id",
+          conversation.id
+        )
+        .eq(
+          "user_id",
+          userId
+        )
+        .maybeSingle();
+
+
+    if (
+      activeBranchError
+    ) {
+      throw new Error(
+        activeBranchError.message
+      );
+    }
+
+
+    if (
+      activeBranchData
+    ) {
+      return (
+        activeBranchData as
+          ConversationBranchRecord
+      ).id;
+    }
+  }
+
+
+  /* -------------------------------------------------
+     2. Find the first existing branch
+  -------------------------------------------------- */
+
+  const {
+    data:
+      firstBranchData,
+
+    error:
+      firstBranchError,
+  } =
+    await supabase
+      .from(
+        "conversation_branches"
+      )
+      .select(
+        `
+          id,
+          conversation_id
+        `
+      )
+      .eq(
+        "conversation_id",
+        conversation.id
+      )
+      .eq(
+        "user_id",
+        userId
+      )
+      .order(
+        "branch_order",
+        {
+          ascending:
+            true,
+        }
+      )
+      .limit(
+        1
+      )
+      .maybeSingle();
+
+
+  if (
+    firstBranchError
+  ) {
+    throw new Error(
+      firstBranchError.message
+    );
+  }
+
+
+  if (
+    firstBranchData
+  ) {
+    const firstBranch =
+      firstBranchData as
+        ConversationBranchRecord;
+
+
+    await updateConversationActiveBranch({
+      supabase,
+
+      conversationId:
+        conversation.id,
+
+      userId,
+
+      branchId:
+        firstBranch.id,
+    });
+
+
+    return firstBranch.id;
+  }
+
+
+  /* -------------------------------------------------
+     3. Create the main branch
+  -------------------------------------------------- */
+
+  const {
+    data:
+      createdBranchData,
+
+    error:
+      createdBranchError,
+  } =
+    await supabase
+      .from(
+        "conversation_branches"
+      )
+      .insert({
+        conversation_id:
+          conversation.id,
+
+        user_id:
+          userId,
+
+        title:
+          "شاخه اصلی",
+
+        branch_order:
+          1,
+      })
+      .select(
+        `
+          id,
+          conversation_id
+        `
+      )
+      .single();
+
+
+  if (
+    createdBranchError ||
+    !createdBranchData
+  ) {
+    /**
+     * ممکن است در یک درخواست هم‌زمان،
+     * شاخه اصلی لحظاتی قبل ساخته شده باشد.
+     * بنابراین یک‌بار دیگر اولین شاخه را می‌خوانیم.
+     */
+    const {
+      data:
+        retryBranchData,
+
+      error:
+        retryBranchError,
+    } =
+      await supabase
+        .from(
+          "conversation_branches"
+        )
+        .select(
+          `
+            id,
+            conversation_id
+          `
+        )
+        .eq(
+          "conversation_id",
+          conversation.id
+        )
+        .eq(
+          "user_id",
+          userId
+        )
+        .order(
+          "branch_order",
+          {
+            ascending:
+              true,
+          }
+        )
+        .limit(
+          1
+        )
+        .maybeSingle();
+
+
+    if (
+      retryBranchError ||
+      !retryBranchData
+    ) {
+      throw new Error(
+        createdBranchError
+          ?.message ||
+
+        retryBranchError
+          ?.message ||
+
+        "Could not create the main conversation branch."
+      );
+    }
+
+
+    const retryBranch =
+      retryBranchData as
+        ConversationBranchRecord;
+
+
+    await updateConversationActiveBranch({
+      supabase,
+
+      conversationId:
+        conversation.id,
+
+      userId,
+
+      branchId:
+        retryBranch.id,
+    });
+
+
+    return retryBranch.id;
+  }
+
+
+  const createdBranch =
+    createdBranchData as
+      ConversationBranchRecord;
+
+
+  await updateConversationActiveBranch({
+    supabase,
+
+    conversationId:
+      conversation.id,
+
+    userId,
+
+    branchId:
+      createdBranch.id,
+  });
+
+
+  return createdBranch.id;
+}
+
+
+/**
+ * تاریخچه پیام‌ها را مستقیماً از پایگاه داده و
+ * فقط از شاخه فعال دریافت می‌کند.
+ *
+ * در نتیجه تاریخچه ارسال‌شده از مرورگر مبنای Context مدل نیست.
+ */
+async function loadActiveBranchHistory(
+  input: {
+    supabase:
+      SupabaseServerClient;
+
+    conversationId:
+      string;
+
+    branchId:
+      string;
+
+    userId:
+      string;
+  }
+):
+  Promise<Message[]> {
+  const {
+    data,
+    error,
+  } =
+    await input.supabase
+      .from(
+        "messages"
+      )
+      .select(
+        `
+          role,
+          content,
+          created_at
+        `
+      )
+      .eq(
+        "conversation_id",
+        input.conversationId
+      )
+      .eq(
+        "branch_id",
+        input.branchId
+      )
+      .eq(
+        "user_id",
+        input.userId
+      )
+      .in(
+        "role",
+        [
+          "user",
+          "assistant",
+        ]
+      )
+      .order(
+        "created_at",
+        {
+          ascending:
+            true,
+        }
+      );
+
+
+  if (
+    error
+  ) {
+    throw new Error(
+      error.message
+    );
+  }
+
+
+  const records =
+    (
+      data ||
+      []
+    ) as
+      BranchHistoryMessageRecord[];
+
+
+  return records.map(
+    (
+      record
+    ) => ({
+      role:
+        record.role as
+          | "user"
+          | "assistant",
+
+      content:
+        record.content,
+    })
+  );
+}
+
+
+/* =====================================================
+   Recent History
 ===================================================== */
 
 function getHistoryForModel(
@@ -340,7 +849,6 @@ function getHistoryForModel(
   const safeStartIndex =
     Math.min(
       summaryMessageCount,
-
       history.length
     );
 
@@ -356,7 +864,7 @@ function getHistoryForModel(
 
 
 /* =====================================================
-   Structured memory
+   Structured Memory
 ===================================================== */
 
 async function loadStructuredMemorySafely(
@@ -399,7 +907,7 @@ async function loadStructuredMemorySafely(
 
 
 /* =====================================================
-   Semantic memory
+   Semantic Memory
 ===================================================== */
 
 function removeRecentHistoryDuplicates(
@@ -479,7 +987,6 @@ async function loadSemanticMemorySafely(
     input.query
       .replace(
         /\s+/g,
-
         " "
       )
       .trim();
@@ -576,7 +1083,7 @@ async function loadSemanticMemorySafely(
 
 
 /* =====================================================
-   Automatic embedding
+   Automatic Embedding
 ===================================================== */
 
 async function embedSavedMessagesSafely(
@@ -666,13 +1173,6 @@ async function embedSavedMessagesSafely(
   } catch (
     error
   ) {
-    /**
-     * خطای Embedding نباید
-     * پاسخ اصلی چت را از بین ببرد.
-     *
-     * API Backfill همچنان می‌تواند
-     * پیام‌های باقی‌مانده را تعمیر کند.
-     */
     console.error(
       "Automatic message embedding error:",
 
@@ -683,7 +1183,7 @@ async function embedSavedMessagesSafely(
 
 
 /* =====================================================
-   MOCK response
+   MOCK Response
 ===================================================== */
 
 function createMockText(
@@ -716,24 +1216,22 @@ function createMockText(
 
 حالت کاری انتخاب‌شده:
 ${getAssistantModeLabel(
-  assistantMode
-)}
+    assistantMode
+  )}
 
-مدل انتخاب‌شده برای این گفتگو:
+مدل مؤثر برای این گفتگو:
 ${selectedModel}
 
 فرمان شما اجرا شد:
-«${
-  visibleUserMessage ||
-  "فایل یا پیام بدون متن"
-}»
+«${visibleUserMessage ||
+    "فایل یا پیام بدون متن"
+    }»
 
 وضعیت حافظه خلاصه‌شده:
-${
-  summaryMemoryIsActive
-    ? "خلاصه گفتگو و پروفایل رفتاری با موفقیت خوانده و وارد system prompt شده‌اند."
-    : "هنوز خلاصه یا پروفایل رفتاری قابل استفاده‌ای برای این گفتگو وجود ندارد."
-}
+${summaryMemoryIsActive
+      ? "خلاصه گفتگو و پروفایل رفتاری با موفقیت خوانده و وارد system prompt شده‌اند."
+      : "هنوز خلاصه یا پروفایل رفتاری قابل استفاده‌ای برای این گفتگو وجود ندارد."
+    }
 
 تعداد پیام‌های جدید و خلاصه‌نشده:
 ${recentHistoryCount}
@@ -747,36 +1245,19 @@ ${semanticMemoryCount}
 منبع جست‌وجوی معنایی:
 ${semanticMemorySource}
 
-${
-  semanticMemoryCount >
-  0
-    ? "پیام‌های قدیمی مرتبط با درخواست فعلی پیدا شده و وارد حافظه زمینه‌ای پاسخ شده‌اند."
-    : "برای درخواست فعلی، پیام قدیمی مرتبطی وارد Context نشده است."
-}
+${semanticMemoryCount >
+      0
+      ? "پیام‌های قدیمی مرتبط با درخواست فعلی پیدا شده و وارد حافظه زمینه‌ای پاسخ شده‌اند."
+      : "برای درخواست فعلی، پیام قدیمی مرتبطی وارد Context نشده است."
+    }
 
-پس از کامل‌شدن این پاسخ:
-
-۱. پیام کاربر در Supabase باقی می‌ماند.
-
-۲. پاسخ دستیار در Supabase ذخیره می‌شود.
-
-۳. Embedding پیام کاربر و پاسخ دستیار به‌صورت خودکار تولید می‌شود.
-
-۴. بردارهای جدید در جدول messages ذخیره می‌شوند.
-
-۵. موتور خلاصه و حافظه ساختاریافته می‌تواند به‌روزرسانی شود.
-
-در حالت MOCK_AI پاسخ اصلی از OpenRouter دریافت نمی‌شود.
-
-در حالت MOCK_EMBEDDINGS=true نیز بردارها بدون مصرف اعتبار OpenRouter ساخته می‌شوند.
-
-پس از فعال‌شدن مدل واقعی، همین معماری بدون نیاز به Backfill دستی برای پیام‌های جدید ادامه خواهد یافت.
+پس از کامل‌شدن این پاسخ، پیام‌ها ذخیره و در صورت فعال بودن، Embeddingها ساخته می‌شوند.
 `.trim();
 }
 
 
 /* =====================================================
-   MOCK stream
+   MOCK Stream
 ===================================================== */
 
 function createMockSavingStream(
@@ -838,21 +1319,11 @@ function createMockSavingStream(
               void (
                 async () => {
                   try {
-                    /**
-                     * ابتدا:
-                     *
-                     * پاسخ ذخیره می‌شود
-                     * و Embeddingها ساخته می‌شوند.
-                     */
                     await onComplete(
                       mockText
                     );
 
 
-                    /**
-                     * سپس پایان Stream
-                     * اعلام می‌شود.
-                     */
                     controller.enqueue(
                       encoder.encode(
                         "data: [DONE]\n\n"
@@ -915,7 +1386,7 @@ function createMockSavingStream(
 
 
 /* =====================================================
-   OpenRouter stream
+   OpenRouter Stream
 ===================================================== */
 
 function createOpenRouterSavingStream(
@@ -959,10 +1430,10 @@ function createOpenRouterSavingStream(
         ) {
           const {
             value,
-
             done,
           } =
-            await reader.read();
+            await reader
+              .read();
 
 
           if (
@@ -1007,16 +1478,17 @@ function createOpenRouterSavingStream(
 
           for (
             const line of
-              lines
+            lines
           ) {
             const trimmedLine =
               line.trim();
 
 
             if (
-              !trimmedLine.startsWith(
-                "data: "
-              )
+              !trimmedLine
+                .startsWith(
+                  "data: "
+                )
             ) {
               continue;
             }
@@ -1026,7 +1498,6 @@ function createOpenRouterSavingStream(
               trimmedLine
                 .replace(
                   "data: ",
-
                   ""
                 )
                 .trim();
@@ -1034,7 +1505,6 @@ function createOpenRouterSavingStream(
 
             if (
               !data ||
-
               data ===
                 "[DONE]"
             ) {
@@ -1068,21 +1538,16 @@ function createOpenRouterSavingStream(
               }
             } catch {
               /**
-               * برخی Chunkها ممکن است
-               * ناقص باشند.
+               * برخی Chunkها ممکن است ناقص باشند.
                */
             }
           }
         }
 
 
-        /**
-         * پاسخ ذخیره و Embedding
-         * قبل از بسته‌شدن Stream
-         * ساخته می‌شود.
-         */
         if (
-          fullText.trim()
+          fullText
+            .trim()
         ) {
           await onComplete(
             fullText
@@ -1146,7 +1611,6 @@ export async function POST(
 
     if (
       userError ||
-
       !user
     ) {
       return new Response(
@@ -1161,7 +1625,20 @@ export async function POST(
 
 
     /* -------------------------------------------------
-       3. Form data
+       3. User AI Credits
+    -------------------------------------------------- */
+
+    const userCredits =
+      await ensureUserAiCredits({
+        supabase,
+
+        userId:
+          user.id,
+      });
+
+
+    /* -------------------------------------------------
+       4. Form Data
     -------------------------------------------------- */
 
     const formData =
@@ -1174,7 +1651,6 @@ export async function POST(
         formData.get(
           "conversationId"
         ) ||
-
         ""
       ).trim();
 
@@ -1184,7 +1660,6 @@ export async function POST(
         formData.get(
           "message"
         ) ||
-
         ""
       ).trim();
 
@@ -1194,19 +1669,8 @@ export async function POST(
         formData.get(
           "displayMessage"
         ) ||
-
         message
       ).trim();
-
-
-    const historyRaw =
-      String(
-        formData.get(
-          "history"
-        ) ||
-
-        "[]"
-      );
 
 
     const assistantModeRaw =
@@ -1214,7 +1678,6 @@ export async function POST(
         formData.get(
           "assistantMode"
         ) ||
-
         "general"
       ).trim();
 
@@ -1236,7 +1699,7 @@ export async function POST(
 
 
     /* -------------------------------------------------
-       4. Validation
+       5. Validation
     -------------------------------------------------- */
 
     if (
@@ -1255,7 +1718,6 @@ export async function POST(
 
     if (
       !message &&
-
       files.length ===
         0
     ) {
@@ -1271,7 +1733,7 @@ export async function POST(
 
 
     /* -------------------------------------------------
-       5. Load conversation
+       6. Load Conversation
     -------------------------------------------------- */
 
     const {
@@ -1287,24 +1749,23 @@ export async function POST(
         )
         .select(
           `
-          id,
-          title,
-          user_id,
-          conversation_summary,
-          summary_message_count,
-          behavior_profile,
-          memory_enabled,
-          selected_model
+            id,
+            title,
+            user_id,
+            active_branch_id,
+            conversation_summary,
+            summary_message_count,
+            behavior_profile,
+            memory_enabled,
+            selected_model
           `
         )
         .eq(
           "id",
-
           conversationId
         )
         .eq(
           "user_id",
-
           user.id
         )
         .single();
@@ -1318,7 +1779,6 @@ export async function POST(
 
     if (
       conversationError ||
-
       !conversation
     ) {
       return new Response(
@@ -1333,88 +1793,171 @@ export async function POST(
 
 
     /* -------------------------------------------------
-       Selected OpenRouter model
+       7. Resolve Active Branch
     -------------------------------------------------- */
 
-    const selectedModel =
-      getSelectedModel(
+    let activeBranchId:
+      string;
+
+
+    try {
+      activeBranchId =
+        await ensureActiveConversationBranch({
+          supabase,
+
+          conversation,
+
+          userId:
+            user.id,
+        });
+    } catch (
+      error
+    ) {
+      console.error(
+        "Resolve active branch error:",
+
+        error
+      );
+
+
+      return new Response(
+        "Could not resolve active conversation branch",
+
+        {
+          status:
+            500,
+        }
+      );
+    }
+
+
+    /* -------------------------------------------------
+       8. Load Trusted Branch History
+
+       تاریخچه مستقیماً از Supabase خوانده می‌شود.
+       مقدار history ارسالی مرورگر مبنای Context نیست.
+    -------------------------------------------------- */
+
+    let safeHistory:
+      Message[];
+
+
+    try {
+      safeHistory =
+        await loadActiveBranchHistory({
+          supabase,
+
+          conversationId,
+
+          branchId:
+            activeBranchId,
+
+          userId:
+            user.id,
+        });
+    } catch (
+      error
+    ) {
+      console.error(
+        "Load active branch history error:",
+
+        error
+      );
+
+
+      return new Response(
+        "Could not load active branch history",
+
+        {
+          status:
+            500,
+        }
+      );
+    }
+
+
+    /* -------------------------------------------------
+       9. Model Decision by Credits
+    -------------------------------------------------- */
+
+    const requestedModel =
+      getRequestedModel(
         conversation
           .selected_model
       );
 
 
-    /* -------------------------------------------------
-       6. Parse history
-    -------------------------------------------------- */
+    const modelDecision =
+      resolveModelForUserCredits({
+        requestedModel,
 
-    let history:
-      Message[] =
-      [];
-
-
-    try {
-      history =
-        JSON.parse(
-          historyRaw
-        );
-    } catch {
-      history =
-        [];
-    }
+        credits:
+          userCredits,
+      });
 
 
-    let safeHistory =
-      history.filter(
-        (
-          historyMessage
-        ) =>
-          historyMessage
-            .role ===
-            "user" ||
-
-          historyMessage
-            .role ===
-            "assistant"
-      );
+    const selectedModel =
+      modelDecision
+        .effectiveModel;
 
 
-    const lastHistoryMessage =
-      safeHistory[
-        safeHistory.length -
-        1
-      ];
+    const shouldShowCreditWarning =
+      modelDecision
+        .shouldShowUpgradeWarning &&
+
+      !modelDecision
+        .credits
+        .warning_shown;
 
 
-    if (
-      lastHistoryMessage
-        ?.role ===
-      "user"
-    ) {
-      const lastContent =
-        getStringMessageContent(
-          lastHistoryMessage
-        );
+    const creditWarningPrompt =
+      shouldShowCreditWarning
+        ? `
+اطلاع مهم برای کاربر:
+${modelDecision.warningText}
+
+این اطلاع را در ابتدای پاسخ، کوتاه و محترمانه نمایش بده و سپس پاسخ اصلی را با مدل رایگان ادامه بده.
+`.trim()
+        : "";
 
 
-      if (
-        lastContent ===
-          displayMessage ||
+    console.log(
+      "[user-credit-model-decision]",
 
-        lastContent ===
-          message
-      ) {
-        safeHistory =
-          safeHistory.slice(
-            0,
+      {
+        requestedModel:
+          modelDecision
+            .requestedModel,
 
-            -1
-          );
+        effectiveModel:
+          modelDecision
+            .effectiveModel,
+
+        hasTrialAccess:
+          modelDecision
+            .hasTrialAccess,
+
+        hasSubscriptionAccess:
+          modelDecision
+            .hasSubscriptionAccess,
+
+        remainingTrialTokens:
+          modelDecision
+            .remainingTrialTokens,
+
+        shouldShowUpgradeWarning:
+          shouldShowCreditWarning,
+
+        activeBranchId,
+
+        branchHistoryCount:
+          safeHistory.length,
       }
-    }
+    );
 
 
     /* -------------------------------------------------
-       7. Memory settings
+       10. Memory Settings
     -------------------------------------------------- */
 
     const memoryEnabled =
@@ -1424,7 +1967,7 @@ export async function POST(
 
 
     /* -------------------------------------------------
-       8. Summary and behavior
+       11. Summary and Behavior
     -------------------------------------------------- */
 
     const behaviorProfile =
@@ -1437,42 +1980,41 @@ export async function POST(
     const summaryMemoryContext =
       memoryEnabled
         ? buildMemoryContextForPrompt(
-            conversation
-              .conversation_summary ||
+          conversation
+            .conversation_summary ||
+          "",
 
-              "",
-
-            behaviorProfile
-          )
+          behaviorProfile
+        )
         : "";
 
 
     /* -------------------------------------------------
-       9. Structured memory
+       12. Structured Memory
     -------------------------------------------------- */
 
     const structuredMemoryItems =
       memoryEnabled
         ? await loadStructuredMemorySafely(
-            supabase,
+          supabase,
 
-            conversationId,
+          conversationId,
 
-            user.id
-          )
+          user.id
+        )
         : [];
 
 
     const structuredMemoryContext =
       memoryEnabled
         ? buildStructuredMemoryContext(
-            structuredMemoryItems
-          )
+          structuredMemoryItems
+        )
         : "";
 
 
     /* -------------------------------------------------
-       10. Recent raw history
+       13. Recent Raw Branch History
     -------------------------------------------------- */
 
     const summaryMessageCount =
@@ -1501,12 +2043,11 @@ export async function POST(
 
 
     /* -------------------------------------------------
-       11. Files
+       14. Files
     -------------------------------------------------- */
 
     const {
       textContext,
-
       images,
     } =
       await buildFilesContext(
@@ -1516,9 +2057,7 @@ export async function POST(
 
     const storedUserContent =
       displayMessage ||
-
       message ||
-
       "📎 [File Uploaded]";
 
 
@@ -1533,7 +2072,7 @@ ${textContext}`
 
 
     /* -------------------------------------------------
-       12. Semantic query
+       15. Semantic Query
     -------------------------------------------------- */
 
     const semanticQuery =
@@ -1541,12 +2080,11 @@ ${textContext}`
         message,
 
         !message &&
-        textContext
+          textContext
           ? textContext.slice(
-              0,
-
-              2500
-            )
+            0,
+            2500
+          )
           : "",
       ]
         .filter(
@@ -1559,42 +2097,42 @@ ${textContext}`
 
 
     /* -------------------------------------------------
-       13. Semantic memory
+       16. Semantic Memory
     -------------------------------------------------- */
 
     const semanticMemory =
       memoryEnabled
         ? await loadSemanticMemorySafely({
-            supabase,
+          supabase,
 
-            conversationId,
+          conversationId,
 
-            userId:
-              user.id,
+          userId:
+            user.id,
 
-            query:
-              semanticQuery,
+          query:
+            semanticQuery,
 
-            recentHistory:
-              historyForModel,
-          })
+          recentHistory:
+            historyForModel,
+        })
         : {
-            context:
-              "",
+          context:
+            "",
 
-            matches:
-              [],
+          matches:
+            [],
 
-            matchCount:
-              0,
+          matchCount:
+            0,
 
-            source:
-              "none" as const,
-          };
+          source:
+            "none" as const,
+        };
 
 
     /* -------------------------------------------------
-       14. Final system prompt
+       17. Final System Prompt
     -------------------------------------------------- */
 
     const baseSystemPrompt =
@@ -1606,6 +2144,8 @@ ${textContext}`
     const finalSystemPrompt =
       [
         baseSystemPrompt,
+
+        creditWarningPrompt,
 
         summaryMemoryContext,
 
@@ -1623,7 +2163,7 @@ ${textContext}`
 
 
     /* -------------------------------------------------
-       15. Save user message
+       18. Save User Message in Active Branch
     -------------------------------------------------- */
 
     const {
@@ -1641,6 +2181,9 @@ ${textContext}`
           conversation_id:
             conversationId,
 
+          branch_id:
+            activeBranchId,
+
           user_id:
             user.id,
 
@@ -1651,7 +2194,11 @@ ${textContext}`
             storedUserContent,
         })
         .select(
-          "id,role,content"
+          `
+            id,
+            role,
+            content
+          `
         )
         .single();
 
@@ -1664,7 +2211,6 @@ ${textContext}`
 
     if (
       insertUserMessageError ||
-
       !savedUserMessage
     ) {
       console.error(
@@ -1686,7 +2232,7 @@ ${textContext}`
 
 
     /* -------------------------------------------------
-       16. Update conversation
+       19. Update Conversation
     -------------------------------------------------- */
 
     const shouldUpdateTitle =
@@ -1709,10 +2255,13 @@ ${textContext}`
           title:
             shouldUpdateTitle
               ? getConversationTitle(
-                  storedUserContent
-                )
+                storedUserContent
+              )
               : conversation
-                  .title,
+                .title,
+
+          active_branch_id:
+            activeBranchId,
 
           updated_at:
             new Date()
@@ -1720,12 +2269,10 @@ ${textContext}`
         })
         .eq(
           "id",
-
           conversationId
         )
         .eq(
           "user_id",
-
           user.id
         );
 
@@ -1742,7 +2289,7 @@ ${textContext}`
 
 
     /* -------------------------------------------------
-       17. Model messages
+       20. Model Messages
     -------------------------------------------------- */
 
     const messages:
@@ -1777,8 +2324,14 @@ ${textContext}`
       ];
 
 
+    const requestEstimatedTokens =
+      estimateMessagesTokens(
+        messages
+      );
+
+
     /* -------------------------------------------------
-       18. Save assistant and embeddings
+       21. Save Assistant Message and Update Usage
     -------------------------------------------------- */
 
     const saveAssistantMessage =
@@ -1809,6 +2362,9 @@ ${textContext}`
               conversation_id:
                 conversationId,
 
+              branch_id:
+                activeBranchId,
+
               user_id:
                 user.id,
 
@@ -1819,7 +2375,11 @@ ${textContext}`
                 assistantText,
             })
             .select(
-              "id,role,content"
+              `
+                id,
+                role,
+                content
+              `
             )
             .single();
 
@@ -1832,7 +2392,6 @@ ${textContext}`
 
         if (
           assistantInsertError ||
-
           !savedAssistantMessage
         ) {
           throw new Error(
@@ -1853,18 +2412,19 @@ ${textContext}`
               "conversations"
             )
             .update({
+              active_branch_id:
+                activeBranchId,
+
               updated_at:
                 new Date()
                   .toISOString(),
             })
             .eq(
               "id",
-
               conversationId
             )
             .eq(
               "user_id",
-
               user.id
             );
 
@@ -1898,11 +2458,91 @@ ${textContext}`
           assistantMessage:
             savedAssistantMessage,
         });
+
+
+        /**
+         * ثبت مصرف اعتبار کاربر
+         *
+         * براساس تصمیم مدل:
+         * - Trial از trial_tokens_used کم می‌شود.
+         * - اشتراک Pro از monthly_tokens_used کم می‌شود.
+         * - حالت رایگان هیچ اعتباری مصرف نمی‌کند.
+         */
+        if (
+          process.env.MOCK_AI !==
+          "true"
+        ) {
+          const responseEstimatedTokens =
+            estimateTextTokens(
+              assistantText
+            );
+
+
+          const totalEstimatedTokens =
+            requestEstimatedTokens +
+            responseEstimatedTokens;
+
+
+          await addTokenUsageByDecision({
+            supabase,
+
+            userId:
+              user.id,
+
+            decision:
+              modelDecision,
+
+            tokensToAdd:
+              totalEstimatedTokens,
+          });
+
+
+          console.log(
+            "[user-token-usage]",
+
+            {
+              effectiveAccess:
+                modelDecision
+                  .effectiveAccess,
+
+              shouldCountTrialUsage:
+                modelDecision
+                  .shouldCountTrialUsage,
+
+              shouldCountMonthlyUsage:
+                modelDecision
+                  .shouldCountMonthlyUsage,
+
+              requestEstimatedTokens,
+
+              responseEstimatedTokens,
+
+              totalEstimatedTokens,
+
+              activeBranchId,
+            }
+          );
+        }
+
+
+        /**
+         * ثبت اینکه هشدار پایان اعتبار نمایش داده شده است.
+         */
+        if (
+          shouldShowCreditWarning
+        ) {
+          await markUpgradeWarningShown({
+            supabase,
+
+            userId:
+              user.id,
+          });
+        }
       };
 
 
     /* -------------------------------------------------
-       19. MOCK
+       22. MOCK
     -------------------------------------------------- */
 
     if (
@@ -1964,7 +2604,7 @@ ${textContext}`
 
 
     /* -------------------------------------------------
-       20. OpenRouter
+       23. OpenRouter
     -------------------------------------------------- */
 
     const response =
@@ -1985,7 +2625,6 @@ ${textContext}`
 
       return new Response(
         errorText ||
-
         "OpenRouter error",
 
         {
