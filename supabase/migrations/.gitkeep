@@ -1,0 +1,2 @@
+# Keep migrations directory in git.
+# Baseline SQL is intentionally absent until P0-A2 (after live schema verification).

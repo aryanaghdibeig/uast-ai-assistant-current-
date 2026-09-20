@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:link": "node -e \"console.log('Run: npx supabase login && npx supabase link --project-ref <YOUR_PROJECT_REF>')\"",
+    "db:pull": "npx supabase db pull",
+    "db:types": "npx supabase gen types typescript --local --schema public > types/database.generated.ts",
+    "db:types:local": "npx supabase gen types typescript --local --schema public > types/database.generated.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.2",

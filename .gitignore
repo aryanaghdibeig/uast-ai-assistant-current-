@@ -125,3 +125,12 @@ desktop.ini
 .temp/
 tmp/
 model-search.txt
+
+
+# =====================================================
+# Supabase CLI local state
+# =====================================================
+
+supabase/.branches
+supabase/.temp
+supabase/.env

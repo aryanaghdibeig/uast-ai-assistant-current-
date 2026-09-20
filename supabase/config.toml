@@ -1,0 +1,28 @@
+# Supabase local CLI config for UAST AI Platform.
+# P0-A1: tooling only — no baseline schema migration yet (see P0-A2).
+
+project_id = "uast-ai-assistant"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+# Match hosted Auth; adjust after live project verification in P0-A2.
+enable_signup = true
