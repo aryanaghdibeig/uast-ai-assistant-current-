@@ -6,6 +6,10 @@ import {
 } from "next/server";
 
 import {
+  requireUser,
+} from "@/lib/auth/require-user";
+
+import {
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
 
@@ -261,30 +265,6 @@ async function readStreamText(
   }
 
   return fullText.trim();
-}
-
-async function getAuthenticatedContext() {
-  const supabase =
-    await createSupabaseServerClient();
-
-  const {
-    data: {
-      user,
-    },
-
-    error,
-  } =
-    await supabase
-      .auth
-      .getUser();
-
-  return {
-    supabase,
-
-    user,
-
-    error,
-  };
 }
 
 async function findConversation(
@@ -779,35 +759,24 @@ export async function GET(
     NextRequest
 ) {
   try {
+    const auth =
+      await requireUser({
+        unauthorizedFormat:
+          "json",
+      });
+
+    if (
+      !auth.ok
+    ) {
+      return auth.response;
+    }
+
     const {
       supabase,
 
       user,
-
-      error:
-        userError,
     } =
-      await getAuthenticatedContext();
-
-    if (
-      userError ||
-      !user
-    ) {
-      return NextResponse.json(
-        {
-          ok:
-            false,
-
-          message:
-            "Unauthorized",
-        },
-
-        {
-          status:
-            401,
-        }
-      );
-    }
+      auth;
 
     const conversationId =
       request
@@ -915,35 +884,24 @@ export async function POST(
     NextRequest
 ) {
   try {
+    const auth =
+      await requireUser({
+        unauthorizedFormat:
+          "json",
+      });
+
+    if (
+      !auth.ok
+    ) {
+      return auth.response;
+    }
+
     const {
       supabase,
 
       user,
-
-      error:
-        userError,
     } =
-      await getAuthenticatedContext();
-
-    if (
-      userError ||
-      !user
-    ) {
-      return NextResponse.json(
-        {
-          ok:
-            false,
-
-          message:
-            "Unauthorized",
-        },
-
-        {
-          status:
-            401,
-        }
-      );
-    }
+      auth;
 
     const body =
       await request

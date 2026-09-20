@@ -18,6 +18,10 @@ import type {
 } from "@/types/chat";
 
 import {
+  requireUser,
+} from "@/lib/auth/require-user";
+
+import {
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
 
@@ -1585,43 +1589,28 @@ export async function POST(
 ) {
   try {
     /* -------------------------------------------------
-       1. Supabase
+       1–2. Supabase session (authenticated)
     -------------------------------------------------- */
 
-    const supabase =
-      await createSupabaseServerClient();
-
-
-    /* -------------------------------------------------
-       2. Authentication
-    -------------------------------------------------- */
-
-    const {
-      data: {
-        user,
-      },
-
-      error:
-        userError,
-    } =
-      await supabase
-        .auth
-        .getUser();
+    const auth =
+      await requireUser({
+        unauthorizedFormat:
+          "text",
+      });
 
 
     if (
-      userError ||
-      !user
+      !auth.ok
     ) {
-      return new Response(
-        "Unauthorized",
-
-        {
-          status:
-            401,
-        }
-      );
+      return auth.response;
     }
+
+
+    const {
+      supabase,
+      user,
+    } =
+      auth;
 
 
     /* -------------------------------------------------

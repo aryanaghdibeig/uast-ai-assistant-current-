@@ -6,8 +6,8 @@ import {
 } from "next/server";
 
 import {
-  createSupabaseServerClient,
-} from "@/lib/supabase/server";
+  requireUser,
+} from "@/lib/auth/require-user";
 
 import type {
   AssistantModeId,
@@ -92,35 +92,6 @@ type SerializedMessage = {
   createdAt:
     string;
 };
-
-
-/* =====================================================
-   Authentication
-===================================================== */
-
-async function getAuthenticatedUser() {
-  const supabase =
-    await createSupabaseServerClient();
-
-
-  const {
-    data: {
-      user,
-    },
-
-    error,
-  } =
-    await supabase
-      .auth
-      .getUser();
-
-
-  return {
-    supabase,
-    user,
-    error,
-  };
-}
 
 
 /* =====================================================
@@ -212,34 +183,25 @@ function buildInitialBranchMap(
 
 export async function GET() {
   try {
-    const {
-      supabase,
-      user,
-      error:
-        userError,
-    } =
-      await getAuthenticatedUser();
+    const auth =
+      await requireUser({
+        unauthorizedFormat:
+          "json",
+      });
 
 
     if (
-      userError ||
-      !user
+      !auth.ok
     ) {
-      return NextResponse.json(
-        {
-          ok:
-            false,
-
-          message:
-            "Unauthorized",
-        },
-
-        {
-          status:
-            401,
-        }
-      );
+      return auth.response;
     }
+
+
+    const {
+      supabase,
+      user,
+    } =
+      auth;
 
 
     /* ================================================
@@ -645,34 +607,25 @@ export async function POST(
     NextRequest
 ) {
   try {
-    const {
-      supabase,
-      user,
-      error:
-        userError,
-    } =
-      await getAuthenticatedUser();
+    const auth =
+      await requireUser({
+        unauthorizedFormat:
+          "json",
+      });
 
 
     if (
-      userError ||
-      !user
+      !auth.ok
     ) {
-      return NextResponse.json(
-        {
-          ok:
-            false,
-
-          message:
-            "Unauthorized",
-        },
-
-        {
-          status:
-            401,
-        }
-      );
+      return auth.response;
     }
+
+
+    const {
+      supabase,
+      user,
+    } =
+      auth;
 
 
     const body =
@@ -813,34 +766,25 @@ export async function PATCH(
     NextRequest
 ) {
   try {
-    const {
-      supabase,
-      user,
-      error:
-        userError,
-    } =
-      await getAuthenticatedUser();
+    const auth =
+      await requireUser({
+        unauthorizedFormat:
+          "json",
+      });
 
 
     if (
-      userError ||
-      !user
+      !auth.ok
     ) {
-      return NextResponse.json(
-        {
-          ok:
-            false,
-
-          message:
-            "Unauthorized",
-        },
-
-        {
-          status:
-            401,
-        }
-      );
+      return auth.response;
     }
+
+
+    const {
+      supabase,
+      user,
+    } =
+      auth;
 
 
     const body =
@@ -1006,34 +950,25 @@ export async function DELETE(
     NextRequest
 ) {
   try {
-    const {
-      supabase,
-      user,
-      error:
-        userError,
-    } =
-      await getAuthenticatedUser();
+    const auth =
+      await requireUser({
+        unauthorizedFormat:
+          "json",
+      });
 
 
     if (
-      userError ||
-      !user
+      !auth.ok
     ) {
-      return NextResponse.json(
-        {
-          ok:
-            false,
-
-          message:
-            "Unauthorized",
-        },
-
-        {
-          status:
-            401,
-        }
-      );
+      return auth.response;
     }
+
+
+    const {
+      supabase,
+      user,
+    } =
+      auth;
 
 
     const conversationId =

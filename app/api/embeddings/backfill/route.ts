@@ -6,6 +6,10 @@ import {
 } from "next/server";
 
 import {
+  requireUser,
+} from "@/lib/auth/require-user";
+
+import {
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
 
@@ -197,42 +201,25 @@ export async function POST(
     NextRequest
 ) {
   try {
-    const supabase =
-      await createSupabaseServerClient();
-
-
-    const {
-      data: {
-        user,
-      },
-
-      error:
-        userError,
-    } =
-      await supabase
-        .auth
-        .getUser();
+    const auth =
+      await requireUser({
+        unauthorizedFormat:
+          "json",
+      });
 
 
     if (
-      userError ||
-      !user
+      !auth.ok
     ) {
-      return NextResponse.json(
-        {
-          ok:
-            false,
-
-          message:
-            "Unauthorized",
-        },
-
-        {
-          status:
-            401,
-        }
-      );
+      return auth.response;
     }
+
+
+    const {
+      supabase,
+      user,
+    } =
+      auth;
 
 
     const body =

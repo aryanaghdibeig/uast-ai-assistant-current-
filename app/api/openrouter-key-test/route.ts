@@ -5,8 +5,8 @@ import {
 } from "next/server";
 
 import {
-  createSupabaseServerClient,
-} from "@/lib/supabase/server";
+  requireUser,
+} from "@/lib/auth/require-user";
 
 import {
   registerLocalProxy,
@@ -29,41 +29,17 @@ export async function GET() {
        1. بررسی ورود کاربر
     ================================================= */
 
-    const supabase =
-      await createSupabaseServerClient();
-
-
-    const {
-      data: {
-        user,
-      },
-
-      error:
-        userError,
-    } =
-      await supabase
-        .auth
-        .getUser();
+    const auth =
+      await requireUser({
+        unauthorizedFormat:
+          "json",
+      });
 
 
     if (
-      userError ||
-      !user
+      !auth.ok
     ) {
-      return NextResponse.json(
-        {
-          ok:
-            false,
-
-          message:
-            "Unauthorized",
-        },
-
-        {
-          status:
-            401,
-        }
-      );
+      return auth.response;
     }
 
 
@@ -175,12 +151,6 @@ export async function GET() {
 
           keyDetected:
             true,
-
-          keyPrefix:
-            `${apiKey.slice(
-              0,
-              8
-            )}...`,
         },
 
         {
@@ -204,12 +174,6 @@ export async function GET() {
 
       keyDetected:
         true,
-
-      keyPrefix:
-        `${apiKey.slice(
-          0,
-          8
-        )}...`,
 
       openRouter:
         responseData,

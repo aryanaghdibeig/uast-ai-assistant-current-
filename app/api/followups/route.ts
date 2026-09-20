@@ -1,7 +1,7 @@
 // app/api/followups/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/require-user";
 import { getOpenRouterStream } from "@/lib/chatService";
 import type { AssistantModeId, Message } from "@/types/chat";
 import { isValidAssistantModeId } from "@/lib/assistant/prompts";
@@ -212,21 +212,12 @@ function sanitizeAiActions(value: unknown): SmartFollowUpAction[] {
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createSupabaseServerClient();
+    const auth = await requireUser({
+      unauthorizedFormat: "json",
+    });
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return NextResponse.json(
-        {
-          ok: false,
-          message: "Unauthorized",
-        },
-        { status: 401 }
-      );
+    if (!auth.ok) {
+      return auth.response;
     }
 
     const body = (await req.json().catch(() => ({}))) as FollowUpRequestBody;

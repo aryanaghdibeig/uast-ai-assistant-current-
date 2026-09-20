@@ -6,8 +6,8 @@ import {
 } from "next/server";
 
 import {
-  createSupabaseServerClient,
-} from "@/lib/supabase/server";
+  requireUser,
+} from "@/lib/auth/require-user";
 
 
 export const runtime =
@@ -58,31 +58,6 @@ type ConversationBranchRow = {
   updated_at:
     string;
 };
-
-
-async function getAuthenticatedUser() {
-  const supabase =
-    await createSupabaseServerClient();
-
-
-  const {
-    data: {
-      user,
-    },
-
-    error,
-  } =
-    await supabase
-      .auth
-      .getUser();
-
-
-  return {
-    supabase,
-    user,
-    error,
-  };
-}
 
 
 async function getConversationId(
@@ -144,34 +119,25 @@ export async function GET(
     RouteContext
 ) {
   try {
-    const {
-      supabase,
-      user,
-      error:
-        userError,
-    } =
-      await getAuthenticatedUser();
+    const auth =
+      await requireUser({
+        unauthorizedFormat:
+          "json",
+      });
 
 
     if (
-      userError ||
-      !user
+      !auth.ok
     ) {
-      return NextResponse.json(
-        {
-          ok:
-            false,
-
-          message:
-            "Unauthorized",
-        },
-
-        {
-          status:
-            401,
-        }
-      );
+      return auth.response;
     }
+
+
+    const {
+      supabase,
+      user,
+    } =
+      auth;
 
 
     const conversationId =
@@ -418,34 +384,25 @@ export async function PATCH(
     RouteContext
 ) {
   try {
-    const {
-      supabase,
-      user,
-      error:
-        userError,
-    } =
-      await getAuthenticatedUser();
+    const auth =
+      await requireUser({
+        unauthorizedFormat:
+          "json",
+      });
 
 
     if (
-      userError ||
-      !user
+      !auth.ok
     ) {
-      return NextResponse.json(
-        {
-          ok:
-            false,
-
-          message:
-            "Unauthorized",
-        },
-
-        {
-          status:
-            401,
-        }
-      );
+      return auth.response;
     }
+
+
+    const {
+      supabase,
+      user,
+    } =
+      auth;
 
 
     const conversationId =
