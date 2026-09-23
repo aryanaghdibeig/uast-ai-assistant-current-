@@ -14,6 +14,11 @@ import {
 } from "@/lib/supabase/server";
 
 import {
+  getOwnedConversation,
+  getLatestOwnedConversation,
+} from "@/lib/conversations/ownership";
+
+import {
   backfillMessageEmbeddings,
 } from "@/lib/assistant/messageEmbeddings";
 
@@ -94,30 +99,25 @@ async function findConversation(
     input.conversationId
   ) {
     const {
-      data,
+      conversation,
 
       error,
     } =
-      await input
-        .supabase
-        .from(
-          "conversations"
-        )
-        .select(
-          "id,title"
-        )
-        .eq(
-          "id",
+      await getOwnedConversation<
+        ConversationRow
+      >({
+        supabase:
+          input.supabase,
 
-          input
-            .conversationId
-        )
-        .eq(
-          "user_id",
+        userId:
+          input.userId,
 
-          input.userId
-        )
-        .maybeSingle();
+        conversationId:
+          input.conversationId,
+
+        select:
+          "id,title",
+      });
 
 
     if (
@@ -129,12 +129,7 @@ async function findConversation(
     }
 
 
-    return (
-      data ||
-      null
-    ) as
-      ConversationRow |
-      null;
+    return conversation;
   }
 
 
@@ -143,35 +138,22 @@ async function findConversation(
    * آخرین گفتگوی فعال کاربر انتخاب می‌شود.
    */
   const {
-    data,
+    conversation,
 
     error,
   } =
-    await input
-      .supabase
-      .from(
-        "conversations"
-      )
-      .select(
-        "id,title"
-      )
-      .eq(
-        "user_id",
+    await getLatestOwnedConversation<
+      ConversationRow
+    >({
+      supabase:
+        input.supabase,
 
-        input.userId
-      )
-      .order(
-        "updated_at",
+      userId:
+        input.userId,
 
-        {
-          ascending:
-            false,
-        }
-      )
-      .limit(
-        1
-      )
-      .maybeSingle();
+      select:
+        "id,title",
+    });
 
 
   if (
@@ -183,12 +165,7 @@ async function findConversation(
   }
 
 
-  return (
-    data ||
-    null
-  ) as
-    ConversationRow |
-    null;
+  return conversation;
 }
 
 

@@ -12,6 +12,29 @@ import {
   getOpenRouterStream,
 } from "@/lib/chatService";
 
+import {
+  resolveAdaptiveOutputBudget,
+} from "@/lib/ai/adaptive-output-budget";
+
+import {
+  CHAT_MESSAGE_TOO_LONG_MESSAGE,
+  isChatMessageTooLong,
+} from "@/lib/chat/limits";
+
+import {
+  createRequestId,
+  withRequestIdHeaders,
+} from "@/lib/server/request-id";
+
+import {
+  claimRequestIdempotency,
+  completeRequestIdempotency,
+  failRequestIdempotency,
+  hashIdempotencyPayload,
+  markRequestIdempotencyUsage,
+  parseClientIdempotencyKey,
+} from "@/lib/usage/idempotency";
+
 import type {
   AssistantModeId,
   Message,
@@ -48,11 +71,16 @@ import {
 } from "@/lib/assistant/semanticMemory";
 
 import {
+  retrieveOrgKnowledgeSafely,
+} from "@/lib/assistant/orgKnowledge";
+
+import {
   embedNewMessages,
 } from "@/lib/assistant/automaticMessageEmbeddings";
 
 import {
   getDefaultModelForCurrentMode,
+  getModelUsageTier,
 } from "@/lib/assistant/demoModelPolicy";
 
 import {
@@ -1271,7 +1299,15 @@ function createMockSavingStream(
   onComplete:
     (
       assistantText:
-        string
+        string,
+
+      meta: {
+        incomplete:
+          boolean;
+
+        finishReason:
+          string | null;
+      }
     ) =>
       Promise<void>
 ) {
@@ -1324,7 +1360,15 @@ function createMockSavingStream(
                 async () => {
                   try {
                     await onComplete(
-                      mockText
+                      mockText,
+
+                      {
+                        incomplete:
+                          false,
+
+                        finishReason:
+                          "stop",
+                      }
                     );
 
 
@@ -1400,7 +1444,15 @@ function createOpenRouterSavingStream(
   onComplete:
     (
       assistantText:
-        string
+        string,
+
+      meta: {
+        incomplete:
+          boolean;
+
+        finishReason:
+          string | null;
+      }
     ) =>
       Promise<void>
 ) {
@@ -1426,6 +1478,11 @@ function createOpenRouterSavingStream(
 
       let buffer =
         "";
+
+
+      let finishReason:
+        string | null =
+        null;
 
 
       try {
@@ -1523,11 +1580,15 @@ function createOpenRouterSavingStream(
                 );
 
 
-              const content =
+              const choice =
                 json
                   .choices?.[
                     0
-                  ]
+                  ];
+
+
+              const content =
+                choice
                   ?.delta
                   ?.content ||
 
@@ -1540,6 +1601,29 @@ function createOpenRouterSavingStream(
                 fullText +=
                   content;
               }
+
+
+              const chunkFinishReason =
+                choice
+                  ?.finish_reason ||
+
+                choice
+                  ?.finishReason ||
+
+                null;
+
+
+              if (
+                typeof chunkFinishReason ===
+                  "string" &&
+
+                chunkFinishReason
+                  .trim()
+              ) {
+                finishReason =
+                  chunkFinishReason
+                    .trim();
+              }
             } catch {
               /**
                * برخی Chunkها ممکن است ناقص باشند.
@@ -1549,12 +1633,60 @@ function createOpenRouterSavingStream(
         }
 
 
+        const incomplete =
+          finishReason ===
+            "length" ||
+
+          finishReason ===
+            "max_tokens";
+
+
+        if (
+          incomplete
+        ) {
+          /**
+           * Machine-readable marker for a future "continue" feature.
+           * Current ChatPageClient ignores unknown SSE JSON shapes.
+           */
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                uast: {
+                  incomplete:
+                    true,
+
+                  finishReason,
+                },
+              })}\n\n`
+            )
+          );
+
+
+          console.log(
+            "[chat-stream-incomplete]",
+
+            {
+              finishReason,
+
+              assistantTextLength:
+                fullText.length,
+            }
+          );
+        }
+
+
         if (
           fullText
             .trim()
         ) {
           await onComplete(
-            fullText
+            fullText,
+
+            {
+              incomplete,
+
+              finishReason,
+            }
           );
         }
 
@@ -1587,6 +1719,39 @@ export async function POST(
   request:
     NextRequest
 ) {
+  const requestId =
+    createRequestId(
+      request
+    );
+
+  const respond = (
+    body:
+      BodyInit |
+      null,
+
+    init?:
+      ResponseInit
+  ) =>
+    new Response(
+      body,
+
+      {
+        ...init,
+
+        headers:
+          withRequestIdHeaders(
+            init?.headers,
+
+            requestId
+          ),
+      }
+    );
+
+  let idempotencyRecordId:
+    string |
+    null =
+    null;
+
   try {
     /* -------------------------------------------------
        1–2. Supabase session (authenticated)
@@ -1611,6 +1776,18 @@ export async function POST(
       user,
     } =
       auth;
+
+
+    const clientIdempotencyKey =
+      parseClientIdempotencyKey(
+        request.headers.get(
+          "idempotency-key"
+        ) ||
+
+        request.headers.get(
+          "x-idempotency-key"
+        )
+      );
 
 
     /* -------------------------------------------------
@@ -1694,7 +1871,7 @@ export async function POST(
     if (
       !conversationId
     ) {
-      return new Response(
+      return respond(
         "conversationId is required",
 
         {
@@ -1710,12 +1887,205 @@ export async function POST(
       files.length ===
         0
     ) {
-      return new Response(
+      return respond(
         "Message or file is required",
 
         {
           status:
             400,
+        }
+      );
+    }
+
+
+    if (
+      isChatMessageTooLong(
+        message
+      )
+    ) {
+      return respond(
+        CHAT_MESSAGE_TOO_LONG_MESSAGE,
+
+        {
+          status:
+            400,
+        }
+      );
+    }
+
+
+    const payloadHash =
+      hashIdempotencyPayload({
+        conversationId,
+
+        message,
+
+        displayMessage,
+
+        assistantMode,
+
+        fileCount:
+          files.length,
+      });
+
+
+    try {
+      const claim =
+        await claimRequestIdempotency({
+          userId:
+            user.id,
+
+          operation:
+            "chat.send",
+
+          clientKey:
+            clientIdempotencyKey,
+
+          payloadHash,
+        });
+
+
+      if (
+        claim.outcome ===
+        "payload_conflict"
+      ) {
+        return respond(
+          "Idempotency-Key reused with a different payload",
+
+          {
+            status:
+              409,
+          }
+        );
+      }
+
+
+      if (
+        claim.outcome ===
+        "in_progress"
+      ) {
+        return respond(
+          "A request with this Idempotency-Key is already in progress",
+
+          {
+            status:
+              409,
+
+            headers: {
+              "Retry-After":
+                "5",
+            },
+          }
+        );
+      }
+
+
+      if (
+        claim.outcome ===
+          "replay_completed" &&
+
+        claim.resultRef
+      ) {
+        const replayText =
+          typeof claim
+            .resultRef
+            .assistantContent ===
+            "string"
+            ? String(
+                claim
+                  .resultRef
+                  .assistantContent
+              )
+            : "";
+
+
+        const replayStream =
+          new ReadableStream({
+            start(
+              controller
+            ) {
+              const encoder =
+                new TextEncoder();
+
+
+              if (
+                replayText
+              ) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      choices: [
+                        {
+                          delta: {
+                            content:
+                              replayText,
+                          },
+                        },
+                      ],
+                    })}\n\n`
+                  )
+                );
+              }
+
+
+              controller.enqueue(
+                encoder.encode(
+                  "data: [DONE]\n\n"
+                )
+              );
+
+
+              controller.close();
+            },
+          });
+
+
+        return respond(
+          replayStream,
+
+          {
+            headers: {
+              "Content-Type":
+                "text/event-stream; charset=utf-8",
+
+              "Cache-Control":
+                "no-cache, no-transform",
+
+              Connection:
+                "keep-alive",
+
+              "X-Uast-Idempotency":
+                "replay",
+            },
+          }
+        );
+      }
+
+
+      if (
+        claim.outcome ===
+          "acquired" ||
+
+        claim.outcome ===
+          "reclaimed"
+      ) {
+        idempotencyRecordId =
+          claim.recordId;
+      }
+    } catch (
+      claimError
+    ) {
+      console.error(
+        "[chat-idempotency-claim]",
+
+        {
+          requestId,
+
+          message:
+            claimError instanceof
+              Error
+              ? claimError.message
+              : "claim_failed",
         }
       );
     }
@@ -1770,7 +2140,7 @@ export async function POST(
       conversationError ||
       !conversation
     ) {
-      return new Response(
+      return respond(
         "Conversation not found",
 
         {
@@ -1809,7 +2179,7 @@ export async function POST(
       );
 
 
-      return new Response(
+      return respond(
         "Could not resolve active conversation branch",
 
         {
@@ -1854,7 +2224,7 @@ export async function POST(
       );
 
 
-      return new Response(
+      return respond(
         "Could not load active branch history",
 
         {
@@ -2121,6 +2491,16 @@ ${textContext}`
 
 
     /* -------------------------------------------------
+       16b. Organizational document RAG (global corpus)
+    -------------------------------------------------- */
+
+    const orgKnowledge =
+      await retrieveOrgKnowledgeSafely(
+        semanticQuery
+      );
+
+
+    /* -------------------------------------------------
        17. Final System Prompt
     -------------------------------------------------- */
 
@@ -2141,6 +2521,9 @@ ${textContext}`
         structuredMemoryContext,
 
         semanticMemory
+          .context,
+
+        orgKnowledge
           .context,
       ]
         .filter(
@@ -2209,7 +2592,7 @@ ${textContext}`
       );
 
 
-      return new Response(
+      return respond(
         "Could not save user message",
 
         {
@@ -2326,13 +2709,51 @@ ${textContext}`
     const saveAssistantMessage =
       async (
         assistantText:
-          string
+          string,
+
+        meta: {
+          incomplete:
+            boolean;
+
+          finishReason:
+            string | null;
+        } = {
+          incomplete:
+            false,
+
+          finishReason:
+            null,
+        }
       ) => {
         if (
           !assistantText
             .trim()
         ) {
           return;
+        }
+
+
+        if (
+          meta.incomplete
+        ) {
+          console.log(
+            "[chat-response-incomplete]",
+
+            {
+              conversationId,
+
+              activeBranchId,
+
+              finishReason:
+                meta.finishReason,
+
+              assistantTextLength:
+                assistantText.length,
+
+              readyForContinue:
+                true,
+            }
+          );
         }
 
 
@@ -2451,16 +2872,9 @@ ${textContext}`
 
         /**
          * ثبت مصرف اعتبار کاربر
-         *
-         * براساس تصمیم مدل:
-         * - Trial از trial_tokens_used کم می‌شود.
-         * - اشتراک Pro از monthly_tokens_used کم می‌شود.
-         * - حالت رایگان هیچ اعتباری مصرف نمی‌کند.
+         * MOCK_AI فقط provider را جایگزین می‌کند؛ مصرف همچنان ثبت می‌شود.
          */
-        if (
-          process.env.MOCK_AI !==
-          "true"
-        ) {
+        {
           const responseEstimatedTokens =
             estimateTextTokens(
               assistantText
@@ -2472,24 +2886,124 @@ ${textContext}`
             responseEstimatedTokens;
 
 
-          await addTokenUsageByDecision({
-            supabase,
+          let usageDebited =
+            false;
 
-            userId:
-              user.id,
 
-            decision:
-              modelDecision,
+          if (
+            idempotencyRecordId
+          ) {
+            const usageMark =
+              await markRequestIdempotencyUsage({
+                recordId:
+                  idempotencyRecordId,
 
-            tokensToAdd:
-              totalEstimatedTokens,
-          });
+                tokensDebited:
+                  totalEstimatedTokens,
+              });
+
+
+            if (
+              !usageMark.alreadyRecorded
+            ) {
+              await addTokenUsageByDecision({
+                supabase,
+
+                userId:
+                  user.id,
+
+                decision:
+                  modelDecision,
+
+                tokensToAdd:
+                  totalEstimatedTokens,
+              });
+
+
+              usageDebited =
+                true;
+            }
+          } else {
+            await addTokenUsageByDecision({
+              supabase,
+
+              userId:
+                user.id,
+
+              decision:
+                modelDecision,
+
+              tokensToAdd:
+                totalEstimatedTokens,
+            });
+
+
+            usageDebited =
+              true;
+          }
+
+
+          if (
+            idempotencyRecordId
+          ) {
+            try {
+              await completeRequestIdempotency({
+                recordId:
+                  idempotencyRecordId,
+
+                resultRef: {
+                  conversationId,
+
+                  activeBranchId,
+
+                  assistantMessageId:
+                    savedAssistantMessage.id,
+
+                  assistantContent:
+                    assistantText,
+
+                  userMessageId:
+                    savedUserMessage.id,
+                },
+
+                tokensDebited:
+                  totalEstimatedTokens,
+
+                usageRecorded:
+                  true,
+              });
+            } catch (
+              completeError
+            ) {
+              console.error(
+                "[chat-idempotency-complete]",
+
+                {
+                  requestId,
+
+                  message:
+                    completeError instanceof
+                      Error
+                      ? completeError.message
+                      : "complete_failed",
+                }
+              );
+            }
+          }
 
 
           console.log(
             "[user-token-usage]",
 
             {
+              requestId,
+
+              usageDebited,
+
+              mockProvider:
+                process.env.MOCK_AI ===
+                "true",
+
               effectiveAccess:
                 modelDecision
                   .effectiveAccess,
@@ -2573,7 +3087,7 @@ ${textContext}`
         );
 
 
-      return new Response(
+      return respond(
         mockStream,
 
         {
@@ -2593,14 +3107,59 @@ ${textContext}`
 
 
     /* -------------------------------------------------
-       23. OpenRouter
+       23. Adaptive output budget + OpenRouter
     -------------------------------------------------- */
+
+    const usageTier =
+      getModelUsageTier(
+        selectedModel
+      );
+
+
+    const adaptiveBudget =
+      resolveAdaptiveOutputBudget({
+        userMessage:
+          message,
+
+        displayMessage,
+
+        assistantMode,
+
+        fileCount:
+          files.length,
+
+        hasDocumentText:
+          Boolean(
+            textContext
+              ?.trim()
+          ),
+
+        hasImages:
+          images.length >
+          0,
+
+        hasRagContext:
+          semanticMemory
+            .matchCount >
+          0 ||
+          orgKnowledge
+            .relevant,
+
+        usageTier,
+      });
+
 
     const response =
       await getOpenRouterStream(
         messages,
 
-        selectedModel
+        selectedModel,
+
+        {
+          maxOutputTokensOverride:
+            adaptiveBudget
+              .estimatedTokens,
+        }
       );
 
 
@@ -2612,7 +3171,7 @@ ${textContext}`
           .text();
 
 
-      return new Response(
+      return respond(
         errorText ||
         "OpenRouter error",
 
@@ -2627,7 +3186,7 @@ ${textContext}`
     if (
       !response.body
     ) {
-      return new Response(
+      return respond(
         "OpenRouter response body is empty",
 
         {
@@ -2646,7 +3205,7 @@ ${textContext}`
       );
 
 
-    return new Response(
+    return respond(
       savingStream,
 
       {
@@ -2665,6 +3224,19 @@ ${textContext}`
   } catch (
     error
   ) {
+    if (
+      idempotencyRecordId
+    ) {
+      await failRequestIdempotency({
+        recordId:
+          idempotencyRecordId,
+
+        errorCode:
+          "chat_route_error",
+      });
+    }
+
+
     console.error(
       "Chat route error:",
 
@@ -2672,7 +3244,7 @@ ${textContext}`
     );
 
 
-    return new Response(
+    return respond(
       "Internal server error",
 
       {

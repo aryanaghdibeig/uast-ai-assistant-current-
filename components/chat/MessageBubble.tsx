@@ -39,6 +39,8 @@ type MessageBubbleProps = {
 
   disabled?: boolean;
 
+  incomplete?: boolean;
+
   onEditMessage?: (
     messageId: string,
     content: string
@@ -47,6 +49,8 @@ type MessageBubbleProps = {
   onRegenerateMessage?: (
     messageId: string
   ) => Promise<void>;
+
+  onContinueIncomplete?: () => void;
 };
 
 
@@ -620,8 +624,10 @@ export default function MessageBubble({
   content,
   isLoading = false,
   disabled = false,
+  incomplete = false,
   onEditMessage,
   onRegenerateMessage,
+  onContinueIncomplete,
 }: MessageBubbleProps) {
   const [
     copied,
@@ -1131,6 +1137,42 @@ export default function MessageBubble({
                         {visibleContent}
                       </div>
                     )
+                }
+
+                {
+                  role === "assistant" &&
+                  incomplete &&
+                  !isLoading && (
+                    <div
+                      className={
+                        styles.incompleteNotice
+                      }
+                      role="status"
+                    >
+                      <p>
+                        پاسخ به‌خاطر محدودیت طول خروجی قطع شده است.
+                      </p>
+
+                      {
+                        onContinueIncomplete && (
+                          <button
+                            type="button"
+                            className={
+                              styles.continueIncompleteButton
+                            }
+                            disabled={
+                              disabled
+                            }
+                            onClick={
+                              onContinueIncomplete
+                            }
+                          >
+                            ادامه پاسخ
+                          </button>
+                        )
+                      }
+                    </div>
+                  )
                 }
 
                 {

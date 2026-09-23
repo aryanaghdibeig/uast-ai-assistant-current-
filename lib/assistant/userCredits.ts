@@ -9,6 +9,10 @@ import type {
 } from "@/lib/supabase/server";
 
 import {
+  createSupabaseAdminClient,
+} from "@/lib/supabase/admin";
+
+import {
   DEMO_FREE_MODEL_ALIAS,
   DEMO_MAIN_MODEL_ALIAS,
   OPENROUTER_AUTO_MODEL,
@@ -23,6 +27,15 @@ type SupabaseServerClient =
       typeof createSupabaseServerClient
     >
   >;
+
+
+/**
+ * Entitlement / metering writes must use the service role after
+ * Stage-1 RLS harden (clients no longer UPDATE user_ai_credits).
+ */
+function getCreditsWriteClient() {
+  return createSupabaseAdminClient();
+}
 
 
 export type UserPlan =
@@ -870,7 +883,7 @@ export async function ensureUserAiCredits(
     error:
       insertCreditError,
   } =
-    await supabase
+    await getCreditsWriteClient()
       .from(
         "user_ai_credits"
       )
@@ -1236,6 +1249,71 @@ export function resolveModelForUserCredits(
    Usage update
 ===================================================== */
 
+async function incrementCreditUsageAtomic(input: {
+  userId: string;
+  bucket: "trial" | "monthly";
+  tokensToAdd: number;
+}): Promise<UserAiCreditsRecord | null> {
+  const writeClient = getCreditsWriteClient();
+
+  const { data, error } = await writeClient.rpc(
+    "increment_user_ai_credit_usage",
+    {
+      p_user_id: input.userId,
+      p_bucket: input.bucket,
+      p_tokens: input.tokensToAdd,
+    }
+  );
+
+  if (!error && data) {
+    return normalizeCreditRecord(data);
+  }
+
+  // Fallback when migration not applied yet (local/dev).
+  // Still service-role only; not fully race-safe.
+  console.error(
+    "Atomic credit usage RPC unavailable; falling back to read-modify-write:",
+    error?.message || "unknown"
+  );
+
+  const { data: current, error: readError } = await writeClient
+    .from("user_ai_credits")
+    .select("*")
+    .eq("user_id", input.userId)
+    .single();
+
+  if (readError || !current) {
+    console.error("Fallback credit read failed:", readError);
+    return null;
+  }
+
+  const currentRecord = normalizeCreditRecord(current);
+  const patch =
+    input.bucket === "trial"
+      ? {
+          trial_tokens_used:
+            currentRecord.trial_tokens_used + input.tokensToAdd,
+        }
+      : {
+          monthly_tokens_used:
+            currentRecord.monthly_tokens_used + input.tokensToAdd,
+        };
+
+  const { data: updated, error: updateError } = await writeClient
+    .from("user_ai_credits")
+    .update(patch)
+    .eq("user_id", input.userId)
+    .select("*")
+    .single();
+
+  if (updateError || !updated) {
+    console.error("Fallback credit update failed:", updateError);
+    return null;
+  }
+
+  return normalizeCreditRecord(updated);
+}
+
 export async function addTrialTokenUsage(
   input: {
     supabase:
@@ -1289,55 +1367,25 @@ export async function addTrialTokenUsage(
   }
 
 
-  const nextUsed =
-    credits.trial_tokens_used +
-    tokensToAdd;
+  const updated =
+    await incrementCreditUsageAtomic({
+      userId,
 
+      bucket:
+        "trial",
 
-  const {
-    data:
-      updatedCreditData,
-
-    error:
-      updateCreditError,
-  } =
-    await supabase
-      .from(
-        "user_ai_credits"
-      )
-      .update({
-        trial_tokens_used:
-          nextUsed,
-      })
-      .eq(
-        "user_id",
-
-        userId
-      )
-      .select(
-        "*"
-      )
-      .single();
+      tokensToAdd,
+    });
 
 
   if (
-    updateCreditError ||
-    !updatedCreditData
+    !updated
   ) {
-    console.error(
-      "Update user AI trial credits error:",
-
-      updateCreditError
-    );
-
-
     return credits;
   }
 
 
-  return normalizeCreditRecord(
-    updatedCreditData
-  );
+  return updated;
 }
 
 
@@ -1401,55 +1449,25 @@ export async function addMonthlyTokenUsage(
   }
 
 
-  const nextUsed =
-    credits.monthly_tokens_used +
-    tokensToAdd;
+  const updated =
+    await incrementCreditUsageAtomic({
+      userId,
 
+      bucket:
+        "monthly",
 
-  const {
-    data:
-      updatedCreditData,
-
-    error:
-      updateCreditError,
-  } =
-    await supabase
-      .from(
-        "user_ai_credits"
-      )
-      .update({
-        monthly_tokens_used:
-          nextUsed,
-      })
-      .eq(
-        "user_id",
-
-        userId
-      )
-      .select(
-        "*"
-      )
-      .single();
+      tokensToAdd,
+    });
 
 
   if (
-    updateCreditError ||
-    !updatedCreditData
+    !updated
   ) {
-    console.error(
-      "Update user AI monthly credits error:",
-
-      updateCreditError
-    );
-
-
     return credits;
   }
 
 
-  return normalizeCreditRecord(
-    updatedCreditData
-  );
+  return updated;
 }
 
 
@@ -1543,7 +1561,7 @@ export async function updateAccessModePreference(
     error:
       updateError,
   } =
-    await supabase
+    await getCreditsWriteClient()
       .from(
         "user_ai_credits"
       )
@@ -1658,7 +1676,7 @@ export async function activateInternalProSubscription(
     error:
       updateError,
   } =
-    await supabase
+    await getCreditsWriteClient()
       .from(
         "user_ai_credits"
       )
@@ -1751,7 +1769,7 @@ export async function markUpgradeWarningShown(
     input;
 
 
-  await supabase
+  await getCreditsWriteClient()
     .from(
       "user_ai_credits"
     )

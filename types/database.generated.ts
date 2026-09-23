@@ -440,6 +440,69 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_request_idempotency: {
+        Args: {
+          p_client_key: string
+          p_lease_seconds?: number
+          p_operation: string
+          p_payload_hash: string
+          p_user_id: string
+        }
+        Returns: {
+          error_code: string | null
+          outcome: string
+          record_id: string
+          result_ref: Record<string, unknown> | null
+          status: string
+          tokens_debited: number
+          usage_recorded: boolean
+        }[]
+      }
+      complete_request_idempotency: {
+        Args: {
+          p_record_id: string
+          p_result_ref: Record<string, unknown>
+          p_tokens_debited?: number
+          p_usage_recorded?: boolean
+        }
+        Returns: Record<string, unknown>
+      }
+      fail_request_idempotency: {
+        Args: {
+          p_error_code?: string
+          p_record_id: string
+        }
+        Returns: Record<string, unknown>
+      }
+      mark_request_idempotency_usage: {
+        Args: {
+          p_record_id: string
+          p_tokens_debited: number
+        }
+        Returns: Record<string, unknown>
+      }
+      increment_user_ai_credit_usage: {
+        Args: {
+          p_bucket: string
+          p_tokens: number
+          p_user_id: string
+        }
+        Returns: {
+          access_mode_preference: string | null
+          created_at: string | null
+          monthly_token_limit: number
+          monthly_tokens_used: number
+          subscription_expires_at: string | null
+          subscription_plan_code: string | null
+          subscription_started_at: string | null
+          subscription_status: string | null
+          trial_token_limit: number
+          trial_tokens_used: number
+          updated_at: string | null
+          upgrade_warning_shown_at: string | null
+          user_id: string
+        }
+      }
       match_conversation_messages: {
         Args: {
           match_count?: number

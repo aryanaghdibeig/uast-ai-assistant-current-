@@ -4,8 +4,9 @@
   justify-content: flex-start;
   gap: 12px;
   padding: 12px 24px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 42%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
   min-height: 88px;
 }
 
@@ -17,11 +18,21 @@
   flex-shrink: 0;
 }
 
+.brandRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
 .headerText {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
+  min-width: 0;
 }
 
 .title {

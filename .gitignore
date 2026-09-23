@@ -54,6 +54,9 @@
 # فقط فایل نمونه اجازه ورود به GitHub دارد
 !.env.example
 
+# Local e2e credentials (never commit)
+.e2e-user.local.json
+
 
 # =====================================================
 # Vercel
@@ -134,3 +137,10 @@ model-search.txt
 supabase/.branches
 supabase/.temp
 supabase/.env
+
+# =====================================================
+# Organizational knowledge index (embeddings; rebuild locally)
+# =====================================================
+
+/data/org-knowledge/
+

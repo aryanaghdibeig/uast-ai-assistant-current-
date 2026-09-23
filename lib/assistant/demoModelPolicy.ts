@@ -232,23 +232,34 @@ export function getModelUsageTier(
 export function getMaxOutputTokensForTier(
   tier: ModelUsageTier
 ): number {
+  // Optional global override — set high to avoid mid-answer truncation.
+  const globalCap =
+    readPositiveIntegerEnv(
+      "CHAT_MAX_OUTPUT_TOKENS",
+      0
+    );
+
+  if (globalCap > 0) {
+    return globalCap;
+  }
+
   switch (tier) {
     case "free":
       return readPositiveIntegerEnv(
         "DEMO_MAX_OUTPUT_TOKENS_FREE",
-        1600
+        8000
       );
 
     case "main":
       return readPositiveIntegerEnv(
         "DEMO_MAX_OUTPUT_TOKENS_MAIN",
-        2200
+        16000
       );
 
     case "advanced":
       return readPositiveIntegerEnv(
         "DEMO_MAX_OUTPUT_TOKENS_ADVANCED",
-        3200
+        32768
       );
 
     case "manual":
@@ -256,7 +267,7 @@ export function getMaxOutputTokensForTier(
     default:
       return readPositiveIntegerEnv(
         "DEMO_MAX_OUTPUT_TOKENS_ADVANCED",
-        3200
+        32768
       );
   }
 }

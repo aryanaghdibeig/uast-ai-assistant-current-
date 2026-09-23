@@ -10,6 +10,10 @@ import {
 } from "@/lib/auth/require-user";
 
 import {
+  createSupabaseAdminClient,
+} from "@/lib/supabase/admin";
+
+import {
   activateInternalProSubscription,
   ensureUserAiCredits,
   getEffectiveAccess,
@@ -51,13 +55,22 @@ type MockUpgradeBody = {
 
 
 function isMockBillingEnabled() {
-  return (
-    process.env.NODE_ENV !==
+  /**
+   * Production builds never allow mock billing — even if ENABLE_MOCK_BILLING is set.
+   * Local/dev/staging may enable via NODE_ENV !== production AND explicit opt-in...
+   * Actually: allow non-production without flag for DX, but never production.
+   */
+  if (
+    process.env.NODE_ENV ===
       "production" ||
 
-    process.env.ENABLE_MOCK_BILLING ===
-      "true"
-  );
+    process.env.VERCEL_ENV ===
+      "production"
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 
@@ -290,8 +303,12 @@ export async function POST(
     const days =
       body.days &&
       body.days > 0
-        ? Math.floor(
-          body.days
+        ? Math.min(
+          365,
+
+          Math.floor(
+            body.days
+          )
         )
         : 30;
 
@@ -299,8 +316,12 @@ export async function POST(
     const monthlyTokenLimit =
       body.monthlyTokenLimit &&
       body.monthlyTokenLimit > 0
-        ? Math.floor(
-          body.monthlyTokenLimit
+        ? Math.min(
+          5_000_000,
+
+          Math.floor(
+            body.monthlyTokenLimit
+          )
         )
         : 500000;
 
@@ -331,7 +352,7 @@ export async function POST(
       error:
         paymentInsertError,
     } =
-      await supabase
+      await createSupabaseAdminClient()
         .from(
           "user_subscription_payments"
         )

@@ -22,7 +22,9 @@ export default function AssistantModeSelector({
   return (
     <div className={styles.modeSelector}>
       <div className={styles.modeSelectorHeader}>
-        <span className={styles.modeSelectorLabel}>حالت کاری دستیار</span>
+        <span className={styles.modeSelectorLabel}>
+          حالت کاری / موتور agent
+        </span>
         <span className={styles.modeSelectorCurrent}>
           {selectedMode.icon} {selectedMode.shortTitle}
         </span>

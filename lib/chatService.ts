@@ -112,10 +112,14 @@ function getApplicationTitle(): string {
  *
  * این تابع فقط مسئول ارتباط با OpenRouter است.
  * تصمیم‌گیری درباره مدل در demoModelPolicy انجام می‌شود.
+ * سقف خروجی می‌تواند توسط بودجه تطبیقی override شود.
  */
 export async function getOpenRouterStream(
   messages: Message[],
-  model?: string | null
+  model?: string | null,
+  options?: {
+    maxOutputTokensOverride?: number | null;
+  }
 ): Promise<Response> {
   /**
    * جلوگیری از ارسال درخواست خالی
@@ -134,6 +138,16 @@ export async function getOpenRouterStream(
 
   const modelPolicy =
     resolveModelPolicy(model);
+
+  const overrideTokens =
+    options?.maxOutputTokensOverride;
+
+  const maxOutputTokens =
+    typeof overrideTokens === "number" &&
+    Number.isFinite(overrideTokens) &&
+    overrideTokens > 0
+      ? Math.floor(overrideTokens)
+      : modelPolicy.maxOutputTokens;
 
   const applicationUrl =
     getApplicationUrl();
@@ -157,8 +171,15 @@ export async function getOpenRouterStream(
       usageTier:
         modelPolicy.usageTier,
 
-      maxOutputTokens:
+      maxOutputTokens,
+
+      staticTierMaxOutputTokens:
         modelPolicy.maxOutputTokens,
+
+      adaptiveOverride:
+        typeof overrideTokens === "number"
+          ? Math.floor(overrideTokens)
+          : null,
 
       isFree:
         modelPolicy.isFree,
@@ -212,10 +233,10 @@ export async function getOpenRouterStream(
         messages,
 
         /**
-         * کنترل مصرف خروجی
+         * کنترل مصرف خروجی (ثابت یا تطبیقی)
          */
         max_tokens:
-          modelPolicy.maxOutputTokens,
+          maxOutputTokens,
 
         /**
          * پاسخ به‌صورت تدریجی به رابط کاربری ارسال می‌شود

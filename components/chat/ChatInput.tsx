@@ -2,8 +2,11 @@
 
 "use client";
 
-import { useRef } from "react";
 import styles from "@/app/Chat.module.css";
+import { PromptInputBox } from "@/components/ui/ai-prompt-box";
+import {
+  MAX_CHAT_MESSAGE_CHARS,
+} from "@/lib/chat/limits";
 
 type ChatInputProps = {
   input: string;
@@ -11,7 +14,8 @@ type ChatInputProps = {
   files: File[];
   setFiles: (files: File[]) => void;
   loading: boolean;
-  onSendMessage: () => void;
+  onSendMessage: (payload?: { text: string; files: File[] }) => void;
+  onStop?: () => void;
   placeholder?: string;
 };
 
@@ -22,55 +26,53 @@ export default function ChatInput({
   setFiles,
   loading,
   onSendMessage,
+  onStop,
   placeholder = "پیام خود را بنویسید...",
 }: ChatInputProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
-      onSendMessage();
-    }
-  };
+  const length = input.length;
+  const nearLimit = length > MAX_CHAT_MESSAGE_CHARS * 0.9;
+  const overLimit = length > MAX_CHAT_MESSAGE_CHARS;
 
   return (
-    <div className={styles.inputArea}>
-      <button
-        type="button"
-        className={styles.attachButton}
-        onClick={() => fileInputRef.current?.click()}
-        disabled={loading}
-        title="افزودن فایل"
-      >
-        📎
-      </button>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        hidden
-        multiple
-        onChange={(event) =>
-          setFiles(event.target.files ? Array.from(event.target.files) : [])
-        }
-      />
-
-      <input
-        className={styles.input}
+    <div className={styles.composerShell}>
+      <PromptInputBox
         value={input}
-        onChange={(event) => setInput(event.target.value)}
-        onKeyDown={handleKeyDown}
+        onValueChange={setInput}
+        files={files}
+        onFilesChange={setFiles}
+        isLoading={loading}
+        onStop={onStop}
         placeholder={placeholder}
-        disabled={loading}
+        acceptAnyFile
+        className="w-full"
+        onSend={(message, sentFiles) => {
+          if (overLimit && message.length > MAX_CHAT_MESSAGE_CHARS) {
+            return;
+          }
+          onSendMessage({
+            text: message,
+            files: sentFiles ?? files,
+          });
+        }}
       />
 
-      <button
-        type="button"
-        className={styles.sendButton}
-        onClick={onSendMessage}
-        disabled={loading}
-      >
-        {loading ? "..." : "ارسال"}
-      </button>
+      <div className={styles.composerFooter}>
+        <span className={styles.composerHint}>
+          Enter برای ارسال · Shift+Enter خط جدید
+        </span>
+        <span
+          className={
+            overLimit
+              ? styles.composerCountDanger
+              : nearLimit
+                ? styles.composerCountWarn
+                : styles.composerCount
+          }
+        >
+          {length.toLocaleString("fa-IR")} /{" "}
+          {MAX_CHAT_MESSAGE_CHARS.toLocaleString("fa-IR")}
+        </span>
+      </div>
     </div>
   );
 }

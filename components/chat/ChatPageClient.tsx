@@ -26,9 +26,24 @@ import ChatInput from "@/components/chat/ChatInput";
 
 import ChatSidebar from "@/components/chat/ChatSidebar";
 
-import AssistantModeSelector from "@/components/chat/AssistantModeSelector";
+import DeputyAgentModeSelector from "@/components/chat/DeputyAgentModeSelector";
+
+import {
+  CHAT_MESSAGE_TOO_LONG_MESSAGE,
+  isChatMessageTooLong,
+} from "@/lib/chat/limits";
 
 import WelcomePanel from "@/components/chat/WelcomePanel";
+
+import PageAtmosphere from "@/components/chat/PageAtmosphere";
+
+import PromptCoach from "@/components/chat/PromptCoach";
+
+import {
+  getDeputyById,
+  type DeputyId,
+  type OrgAgent,
+} from "@/lib/org/deputies";
 
 import SmartFollowUpActions from "@/components/chat/SmartFollowUpActions";
 
@@ -40,7 +55,7 @@ import UserCreditsBadge from "@/components/chat/UserCreditsBadge";
 /**
  * انتخاب‌گر مدل OpenRouter
  */
-import ModelSelector from "@/components/chat/ModelSelector";
+import ChatModelPicker from "@/components/chat/ChatModelPicker";
 
 import {
   createSupabaseBrowserClient,
@@ -76,6 +91,12 @@ type Message = {
 
   createdAt?:
   string;
+
+  /**
+   * True when the model stopped due to output token limit.
+   */
+  incomplete?:
+  boolean;
 };
 
 
@@ -204,6 +225,27 @@ function getFriendlyApiError(
 ) {
   const lowerError =
     errorText.toLowerCase();
+
+
+  if (
+    lowerError.includes(
+      "۲۰۰۰۰"
+    ) ||
+
+    lowerError.includes(
+      "20000"
+    ) ||
+
+    lowerError.includes(
+      "too long"
+    ) ||
+
+    lowerError.includes(
+      "نویسه"
+    )
+  ) {
+    return CHAT_MESSAGE_TOO_LONG_MESSAGE;
+  }
 
 
   if (
@@ -407,6 +449,16 @@ export default function ChatPageClient({
 
 
   const [
+    isMobileNavOpen,
+
+    setIsMobileNavOpen,
+  ] =
+    useState(
+      false
+    );
+
+
+  const [
     selectedModeId,
 
     setSelectedModeId,
@@ -415,6 +467,45 @@ export default function ChatPageClient({
       AssistantModeId
     >(
       "general"
+    );
+
+
+  const [
+    selectedDeputyId,
+
+    setSelectedDeputyId,
+  ] =
+    useState<
+      DeputyId |
+      null
+    >(
+      null
+    );
+
+
+  const [
+    previewDeputyId,
+
+    setPreviewDeputyId,
+  ] =
+    useState<
+      DeputyId |
+      null
+    >(
+      null
+    );
+
+
+  const [
+    selectedAgentId,
+
+    setSelectedAgentId,
+  ] =
+    useState<
+      string |
+      null
+    >(
+      null
     );
 
 
@@ -495,6 +586,15 @@ export default function ChatPageClient({
   const messagesEndRef =
     useRef<
       HTMLDivElement
+    >(
+      null
+    );
+
+
+  const abortControllerRef =
+    useRef<
+      AbortController |
+      null
     >(
       null
     );
@@ -1597,6 +1697,71 @@ export default function ChatPageClient({
   );
 
 
+  useEffect(
+    () => {
+      if (
+        !isMobileNavOpen
+      ) {
+        return;
+      }
+
+
+      const previousOverflow =
+        document.body
+          .style
+          .overflow;
+
+
+      document.body
+        .style
+        .overflow =
+        "hidden";
+
+
+      const onKeyDown =
+        (
+          event:
+            KeyboardEvent
+        ) => {
+          if (
+            event.key ===
+            "Escape"
+          ) {
+            setIsMobileNavOpen(
+              false
+            );
+          }
+        };
+
+
+      window.addEventListener(
+        "keydown",
+
+        onKeyDown
+      );
+
+
+      return () => {
+        document.body
+          .style
+          .overflow =
+          previousOverflow;
+
+
+        window.removeEventListener(
+          "keydown",
+
+          onKeyDown
+        );
+      };
+    },
+
+    [
+      isMobileNavOpen,
+    ]
+  );
+
+
   /* =====================================================
      Clear Smart Actions
   ===================================================== */
@@ -1873,6 +2038,11 @@ export default function ChatPageClient({
       ) {
         return;
       }
+
+
+      setSelectedModeId(
+        modeId
+      );
 
 
       const currentConversation =
@@ -2208,6 +2378,111 @@ export default function ChatPageClient({
 
 
   /* =====================================================
+     Deputy / Org Agent Hub
+  ===================================================== */
+
+  const handleSelectDeputy =
+    (
+      deputyId:
+        DeputyId
+    ) => {
+      setSelectedDeputyId(
+        deputyId
+      );
+
+
+      setSelectedAgentId(
+        null
+      );
+    };
+
+
+  const handleSelectOrgAgent =
+    (
+      agent:
+        OrgAgent,
+
+
+      deputyId:
+        DeputyId
+    ) => {
+      setSelectedDeputyId(
+        deputyId
+      );
+
+
+      setSelectedAgentId(
+        agent.id
+      );
+
+
+      void handleChangeMode(
+        agent.modeId
+      );
+    };
+
+
+  const handleClearDeputySelection =
+    () => {
+      setSelectedDeputyId(
+        null
+      );
+
+
+      setSelectedAgentId(
+        null
+      );
+
+
+      setPreviewDeputyId(
+        null
+      );
+    };
+
+
+  const handleShellPointerDown =
+    (
+      event:
+        React.PointerEvent<
+          HTMLDivElement
+        >
+    ) => {
+      if (
+        !selectedDeputyId &&
+        !previewDeputyId
+      ) {
+        return;
+      }
+
+
+      const target =
+        event.target;
+
+
+      if (
+        !(
+          target instanceof
+          Element
+        )
+      ) {
+        return;
+      }
+
+
+      if (
+        target.closest(
+          "[data-deputy-zone]"
+        )
+      ) {
+        return;
+      }
+
+
+      handleClearDeputySelection();
+    };
+
+
+  /* =====================================================
      Use Welcome Prompt
   ===================================================== */
 
@@ -2404,6 +2679,19 @@ export default function ChatPageClient({
       }
 
 
+      if (
+        isChatMessageTooLong(
+          normalizedApiMessage
+        )
+      ) {
+        alert(
+          CHAT_MESSAGE_TOO_LONG_MESSAGE
+        );
+
+        return;
+      }
+
+
       let currentConversation =
         conversationIdOverride
           ? conversations.find(
@@ -2550,6 +2838,30 @@ export default function ChatPageClient({
       );
 
 
+      abortControllerRef
+        .current
+        ?.abort();
+
+
+      const abortController =
+        new AbortController();
+
+
+      abortControllerRef
+        .current =
+        abortController;
+
+
+      const idempotencyKey =
+        typeof crypto !==
+          "undefined" &&
+
+          "randomUUID" in
+          crypto
+          ? crypto.randomUUID()
+          : `idem_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+
       const formData =
         new FormData();
 
@@ -2627,6 +2939,17 @@ export default function ChatPageClient({
 
               body:
                 formData,
+
+
+              signal:
+                abortController
+                  .signal,
+
+
+              headers: {
+                "Idempotency-Key":
+                  idempotencyKey,
+              },
             }
           );
 
@@ -2690,6 +3013,121 @@ export default function ChatPageClient({
           if (
             done
           ) {
+            if (
+              buffer
+                .trim()
+            ) {
+              const trailingLines =
+                buffer
+                  .split(
+                    "\n"
+                  );
+
+              for (
+                const line of
+                trailingLines
+              ) {
+                const trimmedLine =
+                  line.trim();
+
+                if (
+                  !trimmedLine
+                    .startsWith(
+                      "data: "
+                    )
+                ) {
+                  continue;
+                }
+
+                const data =
+                  trimmedLine
+                    .replace(
+                      "data: ",
+
+                      ""
+                    )
+                    .trim();
+
+                if (
+                  !data ||
+                  data ===
+                    "[DONE]"
+                ) {
+                  continue;
+                }
+
+                try {
+                  const json =
+                    JSON.parse(
+                      data
+                    );
+
+                  if (
+                    json
+                      ?.uast
+                      ?.incomplete
+                  ) {
+                    updateConversationMessages(
+                      currentConversationId,
+
+                      (
+                        currentMessages
+                      ) => {
+                        const updated =
+                          [
+                            ...currentMessages,
+                          ];
+
+                        const last =
+                          updated[
+                            updated.length -
+                            1
+                          ];
+
+                        if (
+                          last?.role ===
+                          "assistant"
+                        ) {
+                          updated[
+                            updated.length -
+                            1
+                          ] = {
+                            ...last,
+
+                            incomplete:
+                              true,
+                          };
+                        }
+
+                        return updated;
+                      }
+                    );
+                  }
+
+                  const content =
+                    json
+                      .choices?.[
+                        0
+                      ]
+                      ?.delta
+                      ?.content ||
+                    "";
+
+                  if (
+                    content
+                  ) {
+                    fullText +=
+                      content;
+                  }
+                } catch {
+                  // ignore trailing parse errors
+                }
+              }
+
+              buffer =
+                "";
+            }
+
             break;
           }
 
@@ -2764,6 +3202,58 @@ export default function ChatPageClient({
                 );
 
 
+              const incompleteMarker =
+                Boolean(
+                  json
+                    ?.uast
+                    ?.incomplete
+                );
+
+
+              if (
+                incompleteMarker
+              ) {
+                updateConversationMessages(
+                  currentConversationId,
+
+                  (
+                    currentMessages
+                  ) => {
+                    const updated =
+                      [
+                        ...currentMessages,
+                      ];
+
+                    const last =
+                      updated[
+                        updated.length -
+                        1
+                      ];
+
+                    if (
+                      last &&
+                      last.role ===
+                        "assistant"
+                    ) {
+                      updated[
+                        updated.length -
+                        1
+                      ] = {
+                        ...last,
+
+                        incomplete:
+                          true,
+                      };
+                    }
+
+                    return updated;
+                  }
+                );
+
+                continue;
+              }
+
+
               const content =
                 json
                   .choices?.[
@@ -2806,6 +3296,14 @@ export default function ChatPageClient({
 
                       content:
                         fullText,
+
+                      incomplete:
+                        updated[
+                          updated.length -
+                          1
+                        ]
+                          ?.incomplete ===
+                        true,
                     };
 
 
@@ -2876,6 +3374,66 @@ export default function ChatPageClient({
       } catch (
       error
       ) {
+        if (
+          error instanceof
+            DOMException &&
+
+          error.name ===
+            "AbortError"
+        ) {
+          updateConversationMessages(
+            currentConversationId,
+
+
+            (
+              currentMessages
+            ) => {
+              const updated =
+                [
+                  ...currentMessages,
+                ];
+
+
+              const last =
+                updated[
+                updated
+                  .length -
+                1
+                ];
+
+
+              if (
+                last?.role ===
+                "assistant"
+              ) {
+                updated[
+                  updated
+                    .length -
+                  1
+                ] = {
+                  ...last,
+
+
+                  content:
+                    last
+                      .content
+                      .trim()
+                      ? `${last.content}\n\n⏹ تولید پاسخ متوقف شد.`
+
+                      : "⏹ تولید پاسخ متوقف شد.",
+                };
+              }
+
+
+              return updated;
+            }
+          );
+
+
+          return;
+        }
+
+
         console.error(
           "Chat error:",
 
@@ -2914,6 +3472,17 @@ export default function ChatPageClient({
             ]
         );
       } finally {
+        if (
+          abortControllerRef
+            .current ===
+          abortController
+        ) {
+          abortControllerRef
+            .current =
+            null;
+        }
+
+
         setLoading(
           false
         );
@@ -3453,17 +4022,29 @@ export default function ChatPageClient({
   ===================================================== */
 
   const sendMessage =
-    async () => {
+    async (
+      payload?:
+        {
+          text:
+            string;
+
+          files:
+            File[];
+        }
+    ) => {
       await executeMessage({
         apiMessageText:
+          payload?.text ??
           input,
 
 
         displayMessageText:
+          payload?.text ??
           input,
 
 
         attachedFiles:
+          payload?.files ??
           files,
 
 
@@ -3607,6 +4188,13 @@ export default function ChatPageClient({
   }
 
 
+  const activeSceneDeputy =
+    getDeputyById(
+      previewDeputyId ??
+      selectedDeputyId
+    );
+
+
   /* =====================================================
      Render
   ===================================================== */
@@ -3617,7 +4205,50 @@ export default function ChatPageClient({
         styles
           .appShell
       }
+      data-deputy-scene={
+        previewDeputyId ??
+        selectedDeputyId ??
+        "default"
+      }
+      style={
+        {
+          "--page-scene-accent":
+            activeSceneDeputy?.accent ??
+            "#0d9488",
+        } as React.CSSProperties
+      }
+      onPointerDown={
+        handleShellPointerDown
+      }
     >
+      <PageAtmosphere
+        selectedDeputyId={
+          selectedDeputyId
+        }
+        previewDeputyId={
+          previewDeputyId
+        }
+      />
+      {
+        isMobileNavOpen && (
+          <button
+            type="button"
+            className={
+              styles.sidebarBackdrop
+            }
+            aria-label="بستن فهرست گفتگوها"
+            onClick={
+              () => {
+                setIsMobileNavOpen(
+                  false
+                );
+              }
+            }
+          />
+        )
+      }
+
+
       <ChatSidebar
         conversations={
           sidebarConversations
@@ -3629,18 +4260,58 @@ export default function ChatPageClient({
         }
 
 
+        userEmail={
+          userEmail
+        }
+
+
+        isMobileOpen={
+          isMobileNavOpen
+        }
+
+
+        onMobileClose={
+          () => {
+            setIsMobileNavOpen(
+              false
+            );
+          }
+        }
+
+
         onNewChat={
-          handleNewChat
+          () => {
+            setIsMobileNavOpen(
+              false
+            );
+
+            handleNewChat();
+          }
         }
 
 
         onSelectConversation={
-          handleSelectConversation
+          (
+            conversationId
+          ) => {
+            setIsMobileNavOpen(
+              false
+            );
+
+            handleSelectConversation(
+              conversationId
+            );
+          }
         }
 
 
         onDeleteConversation={
           handleDeleteConversation
+        }
+
+
+        onLogout={
+          handleLogout
         }
       />
 
@@ -3651,7 +4322,53 @@ export default function ChatPageClient({
             .chatContainer
         }
       >
-        <Header />
+        <div
+          style={{
+            display:
+              "flex",
+
+            alignItems:
+              "center",
+
+            gap:
+              "8px",
+
+            paddingInline:
+              "8px",
+          }}
+        >
+          <button
+            type="button"
+            className={
+              styles.mobileNavToggle
+            }
+            aria-label="باز کردن فهرست گفتگوها"
+            aria-expanded={
+              isMobileNavOpen
+            }
+            onClick={
+              () => {
+                setIsMobileNavOpen(
+                  (
+                    open
+                  ) =>
+                    !open
+                );
+              }
+            }
+          >
+            ☰
+          </button>
+
+          <div
+            style={{
+              flex:
+                1,
+            }}
+          >
+            <Header />
+          </div>
+        </div>
 
 
         {/* =============================================
@@ -3665,11 +4382,14 @@ export default function ChatPageClient({
 
 
             borderBottom:
-              "1px solid var(--border)",
+              "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
 
 
             background:
-              "var(--bg)",
+              "color-mix(in srgb, var(--bg) 40%, transparent)",
+
+            backdropFilter:
+              "blur(10px)",
 
 
             display:
@@ -3699,7 +4419,7 @@ export default function ChatPageClient({
           <span
             style={{
               color:
-                "#374151",
+                "var(--text)",
             }}
           >
             کاربر واردشده:{" "}
@@ -3727,7 +4447,7 @@ export default function ChatPageClient({
 
 
               border:
-                "1px solid #d1d5db",
+                "1px solid color-mix(in srgb, var(--border) 70%, transparent)",
 
 
               borderRadius:
@@ -3735,11 +4455,11 @@ export default function ChatPageClient({
 
 
               background:
-                "#ffffff",
+                "color-mix(in srgb, var(--surface) 70%, transparent)",
 
 
               color:
-                "#374151",
+                "var(--text)",
 
 
               cursor:
@@ -3770,18 +4490,77 @@ export default function ChatPageClient({
 
 
         {/* =============================================
-            Assistant Mode Selector
+            Org context strip
         ============================================= */}
 
-        <AssistantModeSelector
-          selectedModeId={
-            selectedModeId
-          }
+        {
+          selectedDeputyId && (
+            <div
+              className={
+                styles.contextStrip
+              }
+              data-deputy-zone="context"
+            >
+              <span>
+                زمینه سازمانی
+              </span>
+
+              <span
+                className={
+                  styles.contextPill
+                }
+              >
+                {
+                  getDeputyById(
+                    selectedDeputyId
+                  )?.icon
+                }
+
+                {
+                  getDeputyById(
+                    selectedDeputyId
+                  )?.title
+                }
+              </span>
+
+              {
+                selectedAgentId && (
+                  <span
+                    className={
+                      styles.contextPill
+                    }
+                  >
+                    {
+                      getDeputyById(
+                        selectedDeputyId
+                      )?.agents.find(
+                        (
+                          agent
+                        ) =>
+                          agent.id ===
+                          selectedAgentId
+                      )?.title
+                    }
+                  </span>
+                )
+              }
+
+              <span>
+                دانش اختصاصی معاونت: به‌زودی
+              </span>
+            </div>
+          )
+        }
 
 
-          onChangeMode={
-            handleChangeMode
-          }
+        {/* =============================================
+            حالت کاری فقط از agentهای معاونت
+        ============================================= */}
+
+        <DeputyAgentModeSelector
+          selectedDeputyId={selectedDeputyId}
+          selectedAgentId={selectedAgentId}
+          onSelectAgent={handleSelectOrgAgent}
         />
 
 
@@ -3789,7 +4568,7 @@ export default function ChatPageClient({
             OpenRouter Model Selector
         ============================================= */}
 
-        <ModelSelector
+        <ChatModelPicker
           conversationId={
             activeConversation
               ?.id ||
@@ -4003,13 +4782,30 @@ export default function ChatPageClient({
               .length ===
             0 && (
               <WelcomePanel
-                selectedModeId={
-                  selectedModeId
+                selectedDeputyId={
+                  selectedDeputyId
+                }
+
+                previewDeputyId={
+                  previewDeputyId
+                }
+
+                selectedAgentId={
+                  selectedAgentId
                 }
 
 
-                onSelectMode={
-                  handleChangeMode
+                onSelectDeputy={
+                  handleSelectDeputy
+                }
+
+                onPreviewDeputy={
+                  setPreviewDeputyId
+                }
+
+
+                onSelectAgent={
+                  handleSelectOrgAgent
                 }
 
 
@@ -4047,6 +4843,11 @@ export default function ChatPageClient({
                         .content
                     }
 
+                    incomplete={
+                      message.incomplete ===
+                      true
+                    }
+
                     isLoading={
                       loading &&
 
@@ -4067,6 +4868,25 @@ export default function ChatPageClient({
 
                     onRegenerateMessage={
                       handleRegenerateMessage
+                    }
+
+                    onContinueIncomplete={
+                      () => {
+                        void executeMessage(
+                          {
+                            apiMessageText:
+                              "لطفاً پاسخ قبلی را از همان‌جا ادامه بده و کامل کن.",
+
+
+                            displayMessageText:
+                              "ادامه پاسخ",
+
+
+                            clearComposer:
+                              false,
+                          }
+                        );
+                      }
                     }
                   />
 
@@ -4176,8 +4996,32 @@ export default function ChatPageClient({
           }
 
 
+          onStop={
+            () => {
+              abortControllerRef
+                .current
+                ?.abort();
+            }
+          }
+
+
           placeholder={
             inputPlaceholder
+          }
+        />
+
+        <PromptCoach
+          selectedDeputyId={
+            selectedDeputyId
+          }
+          onInsertPrompt={
+            (
+              prompt
+            ) => {
+              setInput(
+                prompt
+              );
+            }
           }
         />
       </main>

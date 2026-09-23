@@ -1,13 +1,26 @@
 /* =========================
    app/globals.css
 ========================= */
+@import url("https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap");
 @import "katex/dist/katex.min.css";
 @import "highlight.js/styles/github-dark.css";
 @import "tailwindcss";
 
-/* =====================================================
-   Reset
-===================================================== */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-border: var(--border);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-ring: var(--ring);
+  --font-sans: "Vazirmatn", Tahoma, "IRANSans", "Segoe UI", sans-serif;
+}
 
 *,
 *::before,
@@ -22,56 +35,146 @@ body {
   height: 100%;
 }
 
-/* =====================================================
-   Theme Variables (Light)
-===================================================== */
-
 :root {
-  --bg: #ffffff;
-  --text: #111111;
+  --navy-950: #071526;
+  --navy-900: #0b1f3a;
+  --navy-800: #143256;
+  --teal-600: #0d9488;
+  --teal-500: #14b8a6;
+  --cyan-400: #22d3ee;
+  --neutral-50: #f4f7fb;
+  --neutral-100: #e8eef6;
+  --neutral-200: #d5dee9;
+  --neutral-700: #3b4a5f;
+  --neutral-900: #0c1524;
 
-  --chat-bg: #f7f7f8;
-
-  --user-bubble: #2563eb;
+  --bg: var(--neutral-50);
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --text: var(--neutral-900);
+  --text-muted: var(--neutral-700);
+  --accent: var(--teal-600);
+  --accent-strong: var(--navy-800);
+  --chat-bg: #eef3f9;
+  --user-bubble: var(--navy-800);
   --user-text: #ffffff;
+  --ai-bubble: #e7eef8;
+  --ai-text: var(--neutral-900);
+  --border: var(--neutral-200);
+  --focus-ring: var(--teal-500);
+  --danger: #b91c1c;
+  --warning: #b45309;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --font-sans: "Vazirmatn", Tahoma, "IRANSans", "Segoe UI", sans-serif;
 
-  --ai-bubble: #e5e7eb;
-  --ai-text: #111111;
+  /* shadcn / Tailwind semantic tokens */
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --muted: var(--neutral-100);
+  --muted-foreground: var(--text-muted);
+  --primary: var(--accent-strong);
+  --primary-foreground: #ffffff;
+  --border-token: var(--border);
+  --popover: #ffffff;
+  --popover-foreground: var(--text);
+  --ring: var(--accent);
 
-  --border: #e5e5e5;
+  --shell-glow: radial-gradient(
+      circle at 12% 8%,
+      color-mix(in srgb, var(--cyan-400) 28%, transparent),
+      transparent 42%
+    ),
+    radial-gradient(
+      circle at 88% 0%,
+      color-mix(in srgb, var(--teal-500) 22%, transparent),
+      transparent 38%
+    ),
+    linear-gradient(160deg, #f7fafc 0%, #e8f0f8 48%, #edf4f3 100%);
 }
-
-/* =====================================================
-   Dark Mode
-===================================================== */
 
 [data-theme="dark"] {
-  --bg: #0f172a;
-  --text: #e5e7eb;
-
-  --chat-bg: #111827;
-
-  --user-bubble: #2563eb;
-  --user-text: #ffffff;
-
-  --ai-bubble: #1f2937;
-  --ai-text: #e5e7eb;
-
-  --border: #374151;
+  --bg: #060d18;
+  --surface: #0f1a2b;
+  --surface-elevated: #152238;
+  --text: #e8eef7;
+  --text-muted: #9aabbf;
+  --accent: var(--teal-500);
+  --accent-strong: #7dd3fc;
+  --chat-bg: #0a1422;
+  --user-bubble: #1a3a5c;
+  --user-text: #f8fafc;
+  --ai-bubble: #1a2740;
+  --ai-text: #f1f5fb;
+  --border: #243247;
+  --focus-ring: var(--cyan-400);
+  --popover: var(--surface-elevated);
+  --popover-foreground: var(--text);
+  --ring: var(--accent);
+  --shell-glow: radial-gradient(
+      circle at 10% 0%,
+      color-mix(in srgb, var(--cyan-400) 18%, transparent),
+      transparent 40%
+    ),
+    radial-gradient(
+      circle at 90% 10%,
+      color-mix(in srgb, var(--teal-600) 16%, transparent),
+      transparent 36%
+    ),
+    linear-gradient(165deg, #07111f 0%, #0b1728 55%, #0a1a1f 100%);
 }
 
-/* =====================================================
-   Global Body
-===================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 body {
   background: var(--bg);
   color: var(--text);
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* shadcn / Tailwind utility layer helpers */
+@layer utilities {
+  .animate-in {
+    animation: ui-in 180ms ease-out both;
+  }
+
+  .fade-in {
+    --tw-enter-opacity: 0;
+  }
+
+  .zoom-in-95 {
+    --tw-enter-scale: 0.95;
+  }
+}
+
+@keyframes ui-in {
+  from {
+    opacity: var(--tw-enter-opacity, 1);
+    transform: scale(var(--tw-enter-scale, 1));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }

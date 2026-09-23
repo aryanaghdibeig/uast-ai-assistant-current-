@@ -212,11 +212,11 @@ type AppModel = {
 ===================================================== */
 
 const DEFAULT_MODEL_LIMIT =
-  80;
+  500;
 
 
 const MAX_MODEL_LIMIT =
-  150;
+  2000;
 
 
 const ALLOWED_SORT_VALUES =
@@ -574,7 +574,8 @@ function getProviderName(
       .split(
         "/"
       )[0]
-      ?.trim();
+      ?.trim()
+      .toLowerCase();
 
 
   if (
@@ -613,6 +614,9 @@ function getProviderName(
     "x-ai":
       "xAI",
 
+    xai:
+      "xAI",
+
     cohere:
       "Cohere",
 
@@ -627,6 +631,9 @@ function getProviderName(
 
     openrouter:
       "OpenRouter",
+
+    demo:
+      "Demo",
   };
 
 

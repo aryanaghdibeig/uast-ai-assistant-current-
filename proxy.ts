@@ -37,6 +37,8 @@ const RESTRICTED_PRODUCTION_ROUTES = [
   "/api/embeddings/backfill",
 
   "/api/embeddings/backfill-all",
+
+  "/api/billing/mock-upgrade",
 ];
 
 

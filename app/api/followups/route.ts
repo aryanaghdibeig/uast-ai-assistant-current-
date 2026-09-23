@@ -52,6 +52,18 @@ function getModeLabel(modeId: AssistantModeId) {
   }
 }
 
+function shouldPreferTemplateFollowups() {
+  const mode =
+    process.env.DEMO_FOLLOWUP_ACTIONS_MODE?.trim().toLowerCase();
+
+  return (
+    process.env.MOCK_AI === "true" ||
+    mode === "template" ||
+    mode === "rule" ||
+    mode === "rule_based"
+  );
+}
+
 function getFallbackActions(body: FollowUpRequestBody) {
   const modeId = getSafeModeId(body.modeId);
 
@@ -78,25 +90,20 @@ function buildFollowUpPrompt(body: FollowUpRequestBody) {
 تو باید برای یک دستیار هوشمند دانشگاهی، اقدام‌های پیشنهادی بعدی تولید کنی.
 
 اطلاعات گفتگو:
-- حالت کاری: ${modeLabel}
-- موضوع اصلی: ${topic}
+- حالت دستیار: ${modeLabel}
+- موضوع/عنوان: ${topic}
 - عنوان گفتگو: ${conversationTitle}
 - آخرین پیام کاربر: ${lastUserMessage || "نامشخص"}
 - آخرین پاسخ دستیار: ${lastAssistantMessage || "نامشخص"}
 
-وظیفه:
-۶ اقدام پیشنهادی بعدی تولید کن که دقیقاً متناسب با موضوع گفتگو، آخرین پیام کاربر و آخرین پاسخ دستیار باشد.
-
-قواعد:
-- زبان همه خروجی‌ها فارسی باشد.
-- اقدام‌ها باید کاربردی، دقیق و قابل کلیک باشند.
-- عنوان‌ها کوتاه باشند.
-- توضیح‌ها کوتاه و روشن باشند.
-- prompt باید دستور کامل برای ادامه گفتگو باشد.
-- prompt باید طوری نوشته شود که وقتی کاربر آن را ارسال کرد، دستیار دقیقاً همان ادامه کار را انجام دهد.
-- از پیشنهادهای خیلی عمومی و بی‌ربط پرهیز کن.
-- خروجی فقط JSON معتبر باشد.
-- هیچ توضیح اضافی، markdown، code fence یا متن بیرون JSON ننویس.
+قواعد سخت:
+1) فقط JSON معتبر برگردان.
+2) هیچ متن اضافه‌ای خارج از JSON ننویس.
+3) دقیقاً بین 3 تا 6 اقدام بساز.
+4) title کوتاه و فارسی باشد.
+5) description یک جمله کوتاه فارسی باشد.
+6) prompt یک دستور اجرایی کامل برای ادامه گفتگو باشد.
+7) از markdown و code fence استفاده نکن.
 
 فرمت دقیق خروجی:
 {
@@ -154,7 +161,14 @@ async function readOpenRouterStreamText(body: ReadableStream<Uint8Array>) {
   return fullText.trim();
 }
 
-function extractJsonObject(text: string) {
+/**
+ * Best-effort JSON extraction. Never throws — returns null on failure.
+ */
+function tryExtractJsonObject(text: string): unknown | null {
+  if (!text.trim()) {
+    return null;
+  }
+
   const cleaned = text
     .replace(/```json/gi, "")
     .replace(/```/g, "")
@@ -164,13 +178,30 @@ function extractJsonObject(text: string) {
   const end = cleaned.lastIndexOf("}");
 
   if (start === -1 || end === -1 || end <= start) {
-    throw new Error("No JSON object found in model response.");
+    return null;
   }
 
-  return JSON.parse(cleaned.slice(start, end + 1));
+  try {
+    return JSON.parse(cleaned.slice(start, end + 1));
+  } catch {
+    // Attempt a lighter repair: truncate trailing commas before closing braces.
+    const candidate = cleaned
+      .slice(start, end + 1)
+      .replace(/,\s*([}\]])/g, "$1");
+
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      return null;
+    }
+  }
 }
 
 function sanitizeAiActions(value: unknown): SmartFollowUpAction[] {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
   const parsed = value as {
     actions?: unknown;
   };
@@ -210,7 +241,23 @@ function sanitizeAiActions(value: unknown): SmartFollowUpAction[] {
   return actions;
 }
 
+function okFollowupsResponse(input: {
+  source: string;
+  modeId?: AssistantModeId;
+  actions: SmartFollowUpAction[];
+}) {
+  return NextResponse.json({
+    ok: true,
+    source: input.source,
+    ...(input.modeId ? { modeId: input.modeId } : {}),
+    actions: input.actions,
+  });
+}
+
 export async function POST(req: NextRequest) {
+  let fallbackActions: SmartFollowUpAction[] = [];
+  let modeId: AssistantModeId = "general";
+
   try {
     const auth = await requireUser({
       unauthorizedFormat: "json",
@@ -222,17 +269,17 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json().catch(() => ({}))) as FollowUpRequestBody;
 
-    const fallbackActions = getFallbackActions(body);
+    fallbackActions = getFallbackActions(body);
+    modeId = getSafeModeId(body.modeId);
 
-    if (process.env.MOCK_AI === "true") {
-      return NextResponse.json({
-        ok: true,
-        source: "rule_based_mock",
+    if (shouldPreferTemplateFollowups()) {
+      return okFollowupsResponse({
+        source: "rule_based_template",
+        modeId,
         actions: fallbackActions,
       });
     }
 
-    const modeId = getSafeModeId(body.modeId);
     const prompt = buildFollowUpPrompt(body);
 
     const messages: Message[] = [
@@ -247,11 +294,22 @@ export async function POST(req: NextRequest) {
       },
     ];
 
-    const response = await getOpenRouterStream(messages);
+    let response: Response;
+
+    try {
+      response = await getOpenRouterStream(messages);
+    } catch (networkError) {
+      console.error("Followups OpenRouter network error:", networkError);
+
+      return okFollowupsResponse({
+        source: "fallback_after_network_error",
+        modeId,
+        actions: fallbackActions,
+      });
+    }
 
     if (!response.ok || !response.body) {
-      return NextResponse.json({
-        ok: true,
+      return okFollowupsResponse({
         source: "fallback_after_model_error",
         modeId,
         actions: fallbackActions,
@@ -259,46 +317,52 @@ export async function POST(req: NextRequest) {
     }
 
     const modelText = await readOpenRouterStreamText(response.body);
+    const parsedJson = tryExtractJsonObject(modelText);
 
-    try {
-      const parsedJson = extractJsonObject(modelText);
-      const aiActions = sanitizeAiActions(parsedJson);
+    if (!parsedJson) {
+      console.warn(
+        "Followups JSON parse skipped: no valid JSON object in model response."
+      );
 
-      if (aiActions.length > 0) {
-        return NextResponse.json({
-          ok: true,
-          source: "ai",
-          modeId,
-          actions: aiActions,
-        });
-      }
-
-      return NextResponse.json({
-        ok: true,
-        source: "fallback_empty_ai_actions",
-        modeId,
-        actions: fallbackActions,
-      });
-    } catch (parseError) {
-      console.error("Followups JSON parse error:", parseError);
-
-      return NextResponse.json({
-        ok: true,
+      return okFollowupsResponse({
         source: "fallback_parse_error",
         modeId,
         actions: fallbackActions,
       });
     }
+
+    const aiActions = sanitizeAiActions(parsedJson);
+
+    if (aiActions.length > 0) {
+      return okFollowupsResponse({
+        source: "ai",
+        modeId,
+        actions: aiActions,
+      });
+    }
+
+    return okFollowupsResponse({
+      source: "fallback_empty_ai_actions",
+      modeId,
+      actions: fallbackActions,
+    });
   } catch (error) {
     console.error("Followups route error:", error);
 
-    return NextResponse.json(
-      {
-        ok: false,
-        message: "Followups generation failed.",
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
+    // Never crash the chat UI: always return template actions.
+    return okFollowupsResponse({
+      source: "fallback_after_route_error",
+      modeId,
+      actions:
+        fallbackActions.length > 0
+          ? fallbackActions
+          : getSmartFollowUpActions({
+              modeId: "general",
+              topic: "",
+              conversationTitle: "",
+              lastUserMessage: "",
+              lastAssistantMessage: "",
+            }),
+    });
   }
 }
