@@ -139,8 +139,9 @@ supabase/.temp
 supabase/.env
 
 # =====================================================
-# Organizational knowledge index (embeddings; rebuild locally)
+# Organizational knowledge index
 # =====================================================
-
-/data/org-knowledge/
+# Index JSON is committed so clones can use org RAG without re-embedding.
+# Keep local rebuild scratch out of git if added later.
+/data/org-knowledge/*.tmp
 
