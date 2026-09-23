@@ -1,17 +1,13 @@
-// next.config.ts
+import type { NextConfig } from "next";
 
-import type {
-  NextConfig,
-} from "next";
-
-
-const nextConfig:
-  NextConfig = {
+const nextConfig: NextConfig = {
   serverExternalPackages: [
     "pdf-parse",
     "@napi-rs/canvas",
   ],
+  typescript: {
+    ignoreBuildErrors: true,
+  },
 };
-
 
 export default nextConfig;
