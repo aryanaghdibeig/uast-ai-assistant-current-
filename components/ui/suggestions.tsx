@@ -14,12 +14,11 @@ const suggestionVariants = cva(
   {
     variants: {
       variant: {
-        filled:
-          "border border-border/60 bg-[color-mix(in_srgb,var(--surface)_72%,transparent)] text-foreground hover:bg-[color-mix(in_srgb,var(--surface)_92%,transparent)] hover:text-foreground",
+        filled: "border-none bg-muted text-primary hover:bg-border",
         outline:
-          "border border-border bg-transparent text-foreground hover:bg-muted hover:text-foreground",
+          "border border-input bg-transparent text-primary hover:bg-muted",
         ghost:
-          "border-none bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
+          "border-none bg-transparent text-muted-foreground hover:bg-muted hover:text-primary",
       },
     },
     defaultVariants: {

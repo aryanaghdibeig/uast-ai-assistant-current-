@@ -111,7 +111,9 @@ export default function SmartFollowUpActions({
                   disabled={disabled || Boolean(executingActionId)}
                   aria-busy={isExecuting}
                   className={cn(
-                    "max-w-full truncate text-[var(--text)]",
+                    "max-w-full truncate border border-border/70",
+                    "bg-[color-mix(in_srgb,var(--surface)_55%,transparent)]",
+                    "text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_10%,var(--surface))] hover:text-[var(--text)]",
                     isExecuting && "opacity-80",
                   )}
                 >
