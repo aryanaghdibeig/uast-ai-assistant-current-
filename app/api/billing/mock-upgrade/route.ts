@@ -56,21 +56,11 @@ type MockUpgradeBody = {
 
 function isMockBillingEnabled() {
   /**
-   * Production builds never allow mock billing — even if ENABLE_MOCK_BILLING is set.
-   * Local/dev/staging may enable via NODE_ENV !== production AND explicit opt-in...
-   * Actually: allow non-production without flag for DX, but never production.
+   * The in-app «ارتقا آزمایشی به Pro» button is part of the product UI.
+   * It must work on the public domain the same way it does locally.
+   * Set ENABLE_MOCK_BILLING=false to turn the upgrade off.
    */
-  if (
-    process.env.NODE_ENV ===
-      "production" ||
-
-    process.env.VERCEL_ENV ===
-      "production"
-  ) {
-    return false;
-  }
-
-  return true;
+  return process.env.ENABLE_MOCK_BILLING?.trim().toLowerCase() !== "false";
 }
 
 

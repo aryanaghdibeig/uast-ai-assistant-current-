@@ -162,14 +162,14 @@ export const ExpandingCards = React.forwardRef<
                 src={item.imgSrc}
                 alt=""
                 className={cn(
-                  "absolute inset-0 h-full w-full object-cover transition-all duration-300 ease-out",
-                  "scale-110 grayscale",
-                  "group-data-[active=true]:scale-100 group-data-[active=true]:grayscale-0"
+                  "absolute inset-0 h-full w-full object-cover object-center transition-all duration-300 ease-out",
+                  "scale-105",
+                  "group-data-[active=true]:scale-100"
                 )}
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/50 to-black/20" />
+              <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/55 via-black/15 to-transparent" />
 
-              <article className="absolute inset-0 flex flex-col justify-end gap-1.5 overflow-hidden p-3 pb-4 text-right md:gap-2 md:p-5 md:pb-5">
+              <article className="absolute inset-0 z-[2] flex flex-col justify-end gap-1.5 overflow-hidden p-3 pb-4 text-right md:gap-2 md:p-5 md:pb-5">
                 {/* نام در حالت غیرفعال / اولیه — خاکستری و خوانا */}
                 <h3
                   className={cn(

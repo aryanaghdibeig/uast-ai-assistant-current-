@@ -564,13 +564,28 @@ export default function UserCreditsBadge() {
                   "IRR",
 
                 note:
-                  "Local UI test upgrade",
+                  "Demo Pro upgrade",
               }),
           }
         );
 
-      const json =
-        await response.json();
+      const rawBody =
+        await response.text();
+
+      let json:
+        { ok?: boolean; message?: string } =
+        {};
+
+      try {
+        json =
+          rawBody
+            ? JSON.parse(rawBody)
+            : {};
+      } catch {
+        throw new Error(
+          "ارتقا به Pro از سرور پاسخ معتبر نگرفت."
+        );
+      }
 
       if (
         !response.ok ||

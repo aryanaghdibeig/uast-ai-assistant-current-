@@ -70,15 +70,14 @@ assert(
 );
 
 assert(
-  /NODE_ENV ===\s*"production"/.test(mockUpgrade) &&
-    /VERCEL_ENV ===\s*"production"/.test(mockUpgrade),
-  "mock-upgrade: production guards"
+  /ENABLE_MOCK_BILLING/.test(mockUpgrade) &&
+    /NextResponse\.json/.test(mockUpgrade),
+  "mock-upgrade: opt-out flag and JSON responses"
 );
 
 assert(
-  /\/api\/billing\/mock-upgrade/.test(proxy) &&
-    /RESTRICTED_PRODUCTION_ROUTES/.test(proxy),
-  "proxy: mock-upgrade restricted in production"
+  !/\/api\/billing\/mock-upgrade/.test(proxy),
+  "proxy: mock-upgrade stays reachable so the client receives JSON"
 );
 
 assert(
