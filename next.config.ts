@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  outputFileTracingIncludes: {
+    "/api/chat": ["./data/org-knowledge/index.json"],
+    "/api/knowledge/org/reindex": ["./data/org-knowledge/index.json"],
+  },
 };
 
 export default nextConfig;

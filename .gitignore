@@ -139,8 +139,10 @@ supabase/.temp
 supabase/.env
 
 # =====================================================
-# Organizational knowledge index (embeddings; rebuild locally)
+# Organizational knowledge index
+# index.json is shipped so production RAG can read the two guide books.
 # =====================================================
 
-/data/org-knowledge/
+/data/org-knowledge/*
+!/data/org-knowledge/index.json
 
