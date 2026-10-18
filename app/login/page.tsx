@@ -52,7 +52,7 @@ export default function LoginPage() {
   const [message, setMessage] = useState("");
   const [emailCopied, setEmailCopied] = useState(false);
 
-  const contactEmail = "aicenteruast@gmail.com";
+  const contactEmail = "https://webmail.uast.ac.ir/";
   const supabase = createSupabaseBrowserClient();
 
   // لاگین به‌صورت پیش‌فرض تاریک (اولین ورود به صفحه)
@@ -195,17 +195,19 @@ export default function LoginPage() {
                   <div className={styles.contactActions}>
                     <a
                       className={styles.contactMail}
-                      href={`mailto:${contactEmail}`}
+                      href={contactEmail}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       dir="ltr"
                     >
                       <Mail className="size-3.5 shrink-0" aria-hidden />
-                      {contactEmail}
+                      سامانه پست الکترونیک دانشگاه
                     </a>
                     <button
                       type="button"
                       className={styles.contactCopy}
                       onClick={copyContactEmail}
-                      aria-label="کپی ایمیل"
+                      aria-label="کپی لینک سامانه پست الکترونیک"
                     >
                       {emailCopied ? (
                         <Check className="size-3.5" aria-hidden />
